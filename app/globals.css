@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --background: 230 23% 7%;
+  --foreground: 220 20% 93%;
+  --panel: 230 20% 10%;
+  --muted: 225 13% 17%;
+  --accent: 252 92% 70%;
+  --border: 225 15% 19%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(ellipse at 68% -12%, rgba(111, 92, 255, 0.11), transparent 38%),
+    hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(139, 120, 255, 0.35);
+}
+
+.str-chat,
+.str-chat__theme-dark {
+  height: 100%;
+  --str-chat__primary-color: #9a88ff;
+  --str-chat__active-primary-color: #8973ff;
+  --str-chat__background-color: #11121a;
+  --str-chat__secondary-background-color: #171821;
+  --str-chat__message-textarea-background-color: #171821;
+  --str-chat__surface-color: #1b1c26;
+  --str-chat__text-color: #e8e8f0;
+  --str-chat__text-low-emphasis-color: #9092a3;
+  --str-chat__border-color: #282a36;
+}
+
+.str-chat__channel-list {
+  height: 100%;
+  border: 0;
+}
+
+.str-chat__channel-list-messenger {
+  background: transparent;
+}
+
+.str-chat__channel {
+  background: transparent;
+}

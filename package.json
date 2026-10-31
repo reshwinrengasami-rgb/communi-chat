@@ -1,0 +1,41 @@
+{
+  "name": "communichat",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^6.12.0",
+    "@emoji-mart/data": "^1.2.1",
+    "@stream-io/video-react-sdk": "^1.20.0",
+    "clsx": "^2.1.1",
+    "emoji-mart": "^5.6.0",
+    "lucide-react": "^0.468.0",
+    "mongoose": "^8.9.5",
+    "next": "^16.4.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "stream-chat": "^9.54.0",
+    "stream-chat-react": "^14.14.1",
+    "tailwind-merge": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.6",
+    "@types/react-dom": "^19.0.3",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^16.4.3",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2"
+  },
+  "overrides": {
+    "deepmerge": "4.1.2"
+  }
+}
