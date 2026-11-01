@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode,
@@ -9,7 +10,6 @@ import {
 import {
   ArrowLeft,
   Activity,
-  Bell,
   Clapperboard,
   Hash,
   Headphones,
@@ -24,6 +24,10 @@ import {
   X,
 } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
+import {
+  CallNotificationToggle,
+  playCallChime,
+} from "@/components/call-notification-toggle";
 import {
   Channel,
   ChannelList as StreamChannelList,
@@ -205,7 +209,7 @@ function ChatEmojiPicker() {
 
 function AppSidebar() {
   return (
-    <aside className="hidden w-[72px] shrink-0 flex-col items-center border-r border-white/[0.07] bg-[#0d0e14] py-5 sm:flex">
+    <aside className="hidden w-[72px] shrink-0 flex-col items-center border-r border-white/[0.07] bg-[#0d0e14] py-5 lg:flex">
       <div className="grid size-10 place-items-center rounded-2xl bg-gradient-to-br from-violet-400 to-indigo-600 shadow-glow">
         <MessageCircle size={19} className="text-white" />
       </div>
@@ -802,12 +806,7 @@ function WorkspaceHeader({
           <Video size={17} />
         </button>
         <span className="mx-1 h-5 w-px bg-white/10" />
-        <button
-          aria-label="Notifications"
-          className="grid size-9 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
-        >
-          <Bell size={17} />
-        </button>
+        <CallNotificationToggle />
         <div className="ml-1 sm:hidden">
           <UserButton />
         </div>
@@ -826,6 +825,18 @@ function IncomingCallPrompt({
     (call) =>
       call.state.callingState === CallingState.RINGING && !call.isCreatedByMe,
   );
+  const lastRingingCallId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!incomingCall) {
+      lastRingingCallId.current = null;
+      return;
+    }
+    if (lastRingingCallId.current === incomingCall.cid) return;
+    lastRingingCallId.current = incomingCall.cid;
+    playCallChime();
+  }, [incomingCall]);
+
   if (!incomingCall) return null;
 
   return (

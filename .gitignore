@@ -2,8 +2,14 @@ node_modules/
 .next/
 out/
 .env*
+!.env.example
 .env.local
 npm-debug.log*
 
 # clerk configuration (can include secrets)
 /.clerk/
+
+# Android build output and local SDK paths
+/android/.gradle/
+/android/local.properties
+/android/app/build/
