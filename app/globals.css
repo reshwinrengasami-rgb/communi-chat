@@ -67,7 +67,7 @@ input {
 }
 
 @media (max-width: 767px) {
-  .str-chat .str-chat__channel-list {
+  .str-chat__channel-list {
     position: relative;
     inset: auto;
     z-index: auto;
@@ -82,7 +82,7 @@ input {
     visibility: visible;
   }
 
-  .str-chat .str-chat__channel-list-inner {
+  .str-chat__channel-list-inner {
     min-height: 0;
   }
 }

@@ -164,7 +164,7 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
         <WithComponents overrides={{ EmojiPicker: ChatEmojiPicker }}>
           <div className="flex h-[100dvh] min-h-0 overflow-hidden">
             <AppSidebar />
-            <section className="flex min-w-0 flex-1">
+            <section className="flex min-h-0 min-w-0 flex-1">
               <ChannelRail userId={user.id} />
               <ChatWindow
                 onStartCall={(call) => {
@@ -269,6 +269,7 @@ function SidebarButton({
 
 function ChannelRail({ userId }: { userId: string }) {
   const { channel } = useChatContext();
+  const [searchQuery, setSearchQuery] = useState("");
 
   return (
     <aside
@@ -303,13 +304,17 @@ function ChannelRail({ userId }: { userId: string }) {
       </div>
 
       <div className="border-b border-white/[0.06] p-3">
-        <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2 text-xs text-slate-500">
+        <label className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2 text-xs text-slate-500 focus-within:border-violet-300/40">
           <Search size={14} />
-          Search conversations
-          <span className="ml-auto rounded border border-white/10 px-1 py-0.5 text-[10px]">
-            ⌘ K
-          </span>
-        </div>
+          <input
+            type="search"
+            aria-label="Search conversations"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search conversations"
+            className="min-w-0 flex-1 bg-transparent text-xs text-slate-200 outline-none placeholder:text-slate-500"
+          />
+        </label>
       </div>
 
       <div className="flex items-center justify-between px-4 pb-2 pt-5">
@@ -325,14 +330,35 @@ function ChannelRail({ userId }: { userId: string }) {
         </button>
       </div>
       <div className="flex min-h-0 min-w-0 w-full flex-1 overflow-hidden px-2">
-        <StreamChannelList
-          filters={{
-            type: "messaging",
-            members: { $in: [userId] },
-          }}
-          sort={{ last_message_at: -1 }}
-          options={{ state: true, watch: true, presence: true }}
-        />
+        <WithComponents
+          overrides={{ LoadingErrorIndicator: ChannelListLoadError }}
+        >
+          <StreamChannelList
+            filters={{
+              type: "messaging",
+              members: { $in: [userId] },
+            }}
+            sort={{ last_message_at: -1 }}
+            options={{ state: true, watch: true, presence: true }}
+            channelRenderFilterFn={(channels) => {
+              const query = searchQuery.trim().toLowerCase();
+              if (!query) return channels;
+
+              return channels.filter((item) => {
+                const memberNames = Object.values(item.state.members)
+                  .map((member) => member.user?.name ?? "")
+                  .join(" ");
+                const messages = item.state.messages
+                  .map((message) => message.text ?? "")
+                  .join(" ");
+                return `${item.data?.name ?? ""} ${memberNames} ${messages}`
+                  .toLowerCase()
+                  .includes(query);
+              });
+            }}
+            EmptyStateIndicator={ConversationEmptyState}
+          />
+        </WithComponents>
       </div>
       <div className="border-t border-white/[0.06] px-4 py-3 text-[11px] text-slate-600">
         <span className="inline-flex items-center gap-2">
@@ -342,6 +368,49 @@ function ChannelRail({ userId }: { userId: string }) {
       </div>
       <NewConversation />
     </aside>
+  );
+}
+
+function ChannelListLoadError({ error }: { error?: Error | null }) {
+  return (
+    <div role="alert" className="grid h-full place-items-center px-6 text-center">
+      <div className="max-w-xs">
+        <Activity className="mx-auto mb-3 text-rose-300" size={22} />
+        <p className="text-sm font-medium text-slate-200">
+          Could not load conversations
+        </p>
+        <p className="mt-2 break-words text-xs leading-5 text-slate-400">
+          {error?.message ?? "Check your connection and try again."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ConversationEmptyState() {
+  return (
+    <div className="grid h-full place-items-center px-6 text-center">
+      <div className="max-w-xs">
+        <MessageCircle
+          className="mx-auto mb-3 text-violet-300"
+          size={24}
+          aria-hidden="true"
+        />
+        <p className="text-sm font-medium text-slate-200">
+          No conversations found
+        </p>
+        <p className="mt-2 text-xs leading-5 text-slate-400">
+          Start a conversation with someone in your workspace.
+        </p>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event("communichat:new-chat"))}
+          className="mt-4 rounded-lg bg-violet-500 px-4 py-2 text-xs font-medium text-white transition hover:bg-violet-400"
+        >
+          New conversation
+        </button>
+      </div>
+    </div>
   );
 }
 
