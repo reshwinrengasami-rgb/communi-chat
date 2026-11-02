@@ -324,7 +324,7 @@ function ChannelRail({ userId }: { userId: string }) {
           <Plus size={15} />
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2">
+      <div className="flex min-h-0 flex-1 overflow-hidden px-2">
         <StreamChannelList
           filters={{
             type: "messaging",
