@@ -3,13 +3,13 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data ? event.data.json() : {};
   } catch (error) {
-    console.error("Unable to parse incoming call notification", error);
+    console.error("Unable to parse push notification", error);
   }
 
   event.waitUntil(
-    self.registration.showNotification(payload.title || "Incoming call", {
-      body: payload.body || "Someone is calling you.",
-      tag: payload.tag || "communichat-call",
+    self.registration.showNotification(payload.title || "Communichat", {
+      body: payload.body || "You have a new notification.",
+      tag: payload.tag || "communichat",
       data: { url: payload.url || "/" },
       requireInteraction: true,
       silent: false,

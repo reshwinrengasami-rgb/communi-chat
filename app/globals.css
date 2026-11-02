@@ -72,12 +72,17 @@ input {
     inset: auto;
     z-index: auto;
     display: flex;
-    flex: 1 1 auto;
+    flex: 1 1 0%;
+    height: 100%;
     width: 100%;
     min-width: 0;
     max-width: 100%;
     pointer-events: auto;
     transform: none;
     visibility: visible;
+  }
+
+  .str-chat .str-chat__channel-list-inner {
+    min-height: 0;
   }
 }

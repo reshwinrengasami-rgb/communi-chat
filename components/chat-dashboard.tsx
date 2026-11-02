@@ -274,7 +274,7 @@ function ChannelRail({ userId }: { userId: string }) {
     <aside
       className={`${
         channel?.id ? "hidden md:flex" : "flex w-full md:w-[286px]"
-      } shrink-0 flex-col border-r border-white/[0.07] bg-[#101117]`}
+      } min-h-0 shrink-0 flex-col border-r border-white/[0.07] bg-[#101117]`}
     >
       <div className="flex h-[76px] items-center justify-between border-b border-white/[0.07] px-5">
         <div>
@@ -324,7 +324,7 @@ function ChannelRail({ userId }: { userId: string }) {
           <Plus size={15} />
         </button>
       </div>
-      <div className="flex min-h-0 flex-1 overflow-hidden px-2">
+      <div className="flex min-h-0 min-w-0 w-full flex-1 overflow-hidden px-2">
         <StreamChannelList
           filters={{
             type: "messaging",

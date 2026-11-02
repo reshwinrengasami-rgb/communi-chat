@@ -5,6 +5,17 @@ import PushSubscription from "@/models/PushSubscription";
 
 export const runtime = "nodejs";
 
+function hasPushConfiguration() {
+  return Boolean(
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY &&
+      process.env.VAPID_PRIVATE_KEY &&
+      process.env.VAPID_SUBJECT &&
+      process.env.NEXT_PUBLIC_STREAM_API_KEY &&
+      process.env.STREAM_API_SECRET &&
+      process.env.MONGODB_URI,
+  );
+}
+
 function isValidEndpoint(endpoint: unknown): endpoint is string {
   if (typeof endpoint !== "string") return false;
   try {
@@ -29,16 +40,20 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-  if (!publicKey) {
-    console.error("Web Push VAPID public key is not configured");
+  if (!hasPushConfiguration()) {
+    console.error("Web Push configuration is incomplete");
     return NextResponse.json(
-      { error: "Call notifications are not configured" },
+      {
+        error:
+          "Push notifications are not configured. Set both VAPID keys, VAPID_SUBJECT, the Stream API credentials, and MONGODB_URI.",
+      },
       { status: 503 },
     );
   }
 
-  return NextResponse.json({ publicKey });
+  return NextResponse.json({
+    publicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+  });
 }
 
 export async function POST(request: Request) {

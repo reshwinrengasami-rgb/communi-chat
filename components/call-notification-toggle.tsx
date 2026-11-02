@@ -58,7 +58,7 @@ async function getPushConfig() {
   const result = (await response.json()) as PushConfig | { error?: string };
   if (!response.ok) {
     throw new Error(
-      "error" in result ? result.error : "Could not load call notifications",
+      "error" in result ? result.error : "Could not load push notifications",
     );
   }
   return result as PushConfig;
@@ -80,12 +80,12 @@ export function CallNotificationToggle() {
         if (active) setEnabled(Boolean(subscription));
       })
       .catch((loadError: unknown) => {
-        console.error("Unable to load call notification settings", loadError);
+        console.error("Unable to load push notification settings", loadError);
         if (active) {
           setError(
             loadError instanceof Error
               ? loadError.message
-              : "Could not load call notifications",
+              : "Could not load push notifications",
           );
         }
       })
@@ -112,7 +112,7 @@ export function CallNotificationToggle() {
             body: JSON.stringify({ endpoint: subscription.endpoint }),
           });
           if (!response.ok) {
-            throw new Error("Could not disable call notifications");
+            throw new Error("Could not disable push notifications");
           }
           await subscription.unsubscribe();
         }
@@ -138,7 +138,7 @@ export function CallNotificationToggle() {
           ? "granted"
           : await Notification.requestPermission();
       if (permission !== "granted") {
-        throw new Error("Allow notifications to receive incoming-call alerts");
+        throw new Error("Allow notifications to receive chat and call alerts");
       }
 
       const config = await getPushConfig();
@@ -183,13 +183,15 @@ export function CallNotificationToggle() {
       <button
         type="button"
         aria-label={
-          enabled ? "Disable incoming call alerts" : "Enable incoming call alerts"
+          enabled
+            ? "Disable chat and call notifications"
+            : "Enable chat and call notifications"
         }
         aria-pressed={enabled}
         title={
           enabled
-            ? "Disable background call alerts"
-            : "Enable background call alerts"
+            ? "Disable background chat and call notifications"
+            : "Enable background chat and call notifications"
         }
         disabled={loading}
         onClick={() => void toggleNotifications()}

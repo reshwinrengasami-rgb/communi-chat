@@ -31,9 +31,9 @@ export async function POST(request: Request) {
   const vapidSubject = process.env.VAPID_SUBJECT;
 
   if (!apiKey || !apiSecret || !publicKey || !privateKey || !vapidSubject) {
-    console.error("Stream call push notification settings are not configured");
+    console.error("Stream push notification settings are not configured");
     return NextResponse.json(
-      { error: "Call notifications are not configured" },
+      { error: "Push notifications are not configured" },
       { status: 500 },
     );
   }
@@ -57,15 +57,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
   }
 
-  if (!isRecord(event) || event.type !== "call.ring") {
+  if (
+    !isRecord(event) ||
+    (event.type !== "call.ring" && event.type !== "message.new")
+  ) {
     return NextResponse.json({ received: true });
   }
 
+  const isMessage = event.type === "message.new";
+  const message = isRecord(event.message) ? event.message : undefined;
+  const messageSender =
+    message && isRecord(message.user) ? message.user : undefined;
+  const eventUser = isRecord(event.user) ? event.user : undefined;
+  const sender = isMessage ? messageSender ?? eventUser : eventUser;
+  const senderId = sender ? getString(sender.id) : undefined;
   const members = Array.isArray(event.members) ? event.members : [];
-  const callerId = isRecord(event.user) ? getString(event.user.id) : undefined;
   const recipientIds = [
-    ...new Set(members.map(getUserId).filter((id): id is string => Boolean(id))),
-  ].filter((id) => id !== callerId);
+    ...new Set(
+      members
+        .filter(
+          (member) =>
+            !isMessage ||
+            !isRecord(member) ||
+            member.notifications_muted !== true,
+        )
+        .map(getUserId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ].filter((id) => id !== senderId);
 
   if (recipientIds.length === 0) {
     return NextResponse.json({ received: true });
@@ -80,18 +99,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ received: true });
     }
 
-    const callerName =
-      isRecord(event.user) && getString(event.user.name)
-        ? getString(event.user.name)
-        : "Someone";
+    const senderName = (sender && getString(sender.name)) || "Someone";
+    const messageText = message && getString(message.text)?.trim();
+    const hasAttachments =
+      message && Array.isArray(message.attachments) && message.attachments.length > 0;
+    const messageBody = messageText
+      ? messageText.slice(0, 120)
+      : hasAttachments
+        ? "Sent an attachment"
+        : "Sent a message";
+    const channelName = isRecord(event.channel)
+      ? getString(event.channel.name)
+      : undefined;
+    const channelId =
+      getString(event.cid) ?? getString(event.channel_id) ?? "chat";
     const callLabel = event.video === true ? "video call" : "audio call";
-    const ringId = getString(event.ring_id) ?? getString(event.call_cid) ?? "call";
-    const payload = JSON.stringify({
-      title: `Incoming ${callLabel}`,
-      body: `${callerName} is calling you.`,
-      url: "/",
-      tag: `call-${ringId}`,
-    });
+    const callId = getString(event.ring_id) ?? getString(event.call_cid) ?? "call";
+    const payload = isMessage
+      ? JSON.stringify({
+          title: channelName ? `${senderName} in ${channelName}` : senderName,
+          body: messageBody,
+          url: "/",
+          tag: `message-${channelId}`,
+        })
+      : JSON.stringify({
+          title: `Incoming ${callLabel}`,
+          body: `${senderName} is calling you.`,
+          url: "/",
+          tag: `call-${callId}`,
+        });
 
     webpush.setVapidDetails(vapidSubject, publicKey, privateKey);
     const deliveries = await Promise.allSettled(
@@ -120,23 +156,23 @@ export async function POST(request: Request) {
           endpoint: subscriptions[index].endpoint,
         });
       } else {
-        console.error("Unable to send a call push notification", delivery.reason);
+        console.error("Unable to send a push notification", delivery.reason);
         failedDeliveries.push(delivery.reason);
       }
     }
 
     if (failedDeliveries.length > 0) {
       return NextResponse.json(
-        { error: "Unable to deliver all call notifications" },
+        { error: "Unable to deliver all push notifications" },
         { status: 500 },
       );
     }
 
     return NextResponse.json({ received: true });
   } catch (error) {
-    console.error("Unable to process Stream call webhook", error);
+    console.error("Unable to process Stream push webhook", error);
     return NextResponse.json(
-      { error: "Unable to process call notification" },
+      { error: "Unable to process push notification" },
       { status: 500 },
     );
   }
