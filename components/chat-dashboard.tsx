@@ -25,9 +25,9 @@ import {
 } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 import {
-  CallNotificationToggle,
+  CallSoundToggle,
   playCallChime,
-} from "@/components/call-notification-toggle";
+} from "@/components/call-sound-toggle";
 import {
   Channel,
   ChannelList as StreamChannelList,
@@ -74,6 +74,71 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
   const [activeCall, setActiveCall] = useState<Call | null>(null);
   const [callNotice, setCallNotice] = useState("");
   const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function removeLegacyPushSubscription() {
+      if (!("serviceWorker" in navigator)) return;
+
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      const legacyWorkerUrl = new URL("/sw.js", window.location.origin).href;
+      for (const registration of registrations) {
+        const workers = [
+          registration.active,
+          registration.waiting,
+          registration.installing,
+        ];
+        if (
+          !workers.some((worker) => worker?.scriptURL === legacyWorkerUrl) ||
+          cancelled
+        ) {
+          continue;
+        }
+
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          try {
+            const response = await fetch("/api/push-subscriptions", {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ endpoint: subscription.endpoint }),
+            });
+            if (!response.ok) {
+              console.error(
+                "Unable to remove the old push subscription",
+                await response.text(),
+              );
+            }
+          } catch (error) {
+            console.error("Unable to remove the old push subscription", error);
+          }
+
+          try {
+            const unsubscribed = await subscription.unsubscribe();
+            if (!unsubscribed) {
+              console.error("The old push subscription could not be removed");
+            }
+          } catch (error) {
+            console.error("Unable to unsubscribe from old push notifications", error);
+          }
+        }
+
+        const unregistered = await registration.unregister();
+        if (!unregistered) {
+          console.error("The old push service worker could not be unregistered");
+        }
+      }
+    }
+
+    void removeLegacyPushSubscription().catch((error: unknown) => {
+      console.error("Unable to remove old push notification settings", error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -875,7 +940,7 @@ function WorkspaceHeader({
           <Video size={17} />
         </button>
         <span className="mx-1 h-5 w-px bg-white/10" />
-        <CallNotificationToggle />
+        <CallSoundToggle />
         <div className="ml-1 sm:hidden">
           <UserButton />
         </div>
