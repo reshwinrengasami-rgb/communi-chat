@@ -1,9 +1,53 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { StreamChat } from "stream-chat";
 import { syncClerkUser } from "@/lib/sync-user";
 
 export const runtime = "nodejs";
+
+async function syncChannelMemberProfiles(
+  streamServer: StreamChat,
+  userId: string,
+) {
+  const channels = await streamServer.queryChannels(
+    { type: "messaging", members: { $in: [userId] } },
+    { last_message_at: -1 },
+    { limit: 30, state: true, watch: false, message_limit: 0 },
+  );
+  const memberIds = new Set<string>();
+
+  for (const channel of channels) {
+    for (const memberId of Object.keys(channel.state.members)) {
+      if (memberId !== userId) memberIds.add(memberId);
+    }
+  }
+
+  if (memberIds.size === 0) return;
+
+  const clerk = await clerkClient();
+  const userIds = [...memberIds];
+  const profiles = [];
+  for (let index = 0; index < userIds.length; index += 100) {
+    const result = await clerk.users.getUserList({
+      userId: userIds.slice(index, index + 100),
+      limit: 100,
+    });
+    profiles.push(...result.data);
+  }
+
+  for (let index = 0; index < profiles.length; index += 100) {
+    await streamServer.upsertUsers(
+      profiles.slice(index, index + 100).map((profile) => ({
+        id: profile.id,
+        name:
+          [profile.firstName, profile.lastName].filter(Boolean).join(" ") ||
+          profile.username ||
+          profile.id,
+        image: profile.imageUrl,
+      })),
+    );
+  }
+}
 
 export async function GET() {
   const { userId } = await auth();
@@ -118,6 +162,7 @@ export async function POST() {
       name,
       image: clerkUser.imageUrl,
     });
+    await syncChannelMemberProfiles(streamServer, userId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

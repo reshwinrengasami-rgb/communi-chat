@@ -111,6 +111,8 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
   const [bootstrap, setBootstrap] = useState<StreamBootstrap | null>(null);
   const [chatClient, setChatClient] = useState<StreamChat | null>(null);
   const [videoClient, setVideoClient] = useState<StreamVideoClient | null>(null);
+  const [recoveredIncomingCall, setRecoveredIncomingCall] =
+    useState<Call | null>(null);
   const [activeCall, setActiveCall] = useState<Call | null>(null);
   const [callNotice, setCallNotice] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -247,6 +249,25 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
           user: credentials.user,
           token: credentials.token,
         });
+        void connectedVideo
+          .queryCalls({
+            filter_conditions: {
+              members: { $in: [credentials.user.id] },
+              ongoing: { $eq: true },
+            },
+            limit: 10,
+            sort: [{ field: "created_at", direction: -1 }],
+            watch: true,
+          })
+          .then(({ calls }) => {
+            if (cancelled) return;
+            setRecoveredIncomingCall(
+              calls.find((call) => !call.isCreatedByMe) ?? null,
+            );
+          })
+          .catch((error: unknown) => {
+            console.error("Unable to check for active incoming calls", error);
+          });
 
         if (cancelled) {
           await connectedChat.disconnectUser();
@@ -347,7 +368,10 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
               />
             )}
             <IncomingCallPrompt
+              recoveredCall={recoveredIncomingCall}
+              onDismiss={() => setRecoveredIncomingCall(null)}
               onJoin={(call, warning) => {
+                setRecoveredIncomingCall(null);
                 setCallNotice(warning ?? "");
                 setActiveCall(call);
               }}
@@ -1375,14 +1399,21 @@ function GroupMemberManager({
 
 function IncomingCallPrompt({
   onJoin,
+  recoveredCall,
+  onDismiss,
 }: {
   onJoin: (call: Call, cameraWarning?: string) => void;
+  recoveredCall: Call | null;
+  onDismiss: () => void;
 }) {
   const calls = useCalls();
-  const incomingCall = calls.find(
-    (call) =>
-      call.state.callingState === CallingState.RINGING && !call.isCreatedByMe,
-  );
+  const incomingCall =
+    recoveredCall ??
+    calls.find(
+      (call) =>
+        call.state.callingState === CallingState.RINGING && !call.isCreatedByMe,
+    ) ??
+    null;
   const lastRingingCallId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -1402,6 +1433,7 @@ function IncomingCallPrompt({
       key={incomingCall.cid}
       call={incomingCall}
       onJoin={onJoin}
+      onDismiss={onDismiss}
     />
   );
 }
@@ -1409,9 +1441,11 @@ function IncomingCallPrompt({
 function IncomingCallDialog({
   call,
   onJoin,
+  onDismiss,
 }: {
   call: Call;
   onJoin: (call: Call, cameraWarning?: string) => void;
+  onDismiss: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1446,6 +1480,7 @@ function IncomingCallDialog({
     setError("");
     try {
       await call.leave({ reject: true, reason: "decline" });
+      onDismiss();
     } catch (cause) {
       console.error("Unable to decline incoming call", cause);
       setError("Could not decline this call.");
