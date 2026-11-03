@@ -860,6 +860,34 @@ function WorkspaceHeader({
   const { channel, client, setActiveChannel } = useChatContext();
   const [startingCall, setStartingCall] = useState(false);
   const [callError, setCallError] = useState("");
+  const [presenceRevision, setPresenceRevision] = useState(0);
+  useEffect(() => {
+    const subscription = client.on("user.presence.changed", () => {
+      setPresenceRevision((revision) => revision + 1);
+    });
+    return () => subscription.unsubscribe();
+  }, [client]);
+
+  const otherMembers = Object.values(channel?.state.members ?? {}).filter(
+    (member) => member.user?.id !== client.userID,
+  );
+  const presenceAvailable =
+    otherMembers.length > 0 &&
+    otherMembers.every((member) => typeof member.user?.online === "boolean");
+  const onlineCount = otherMembers.filter((member) => member.user?.online).length;
+  const presence = channel?.id
+    ? {
+        label: !presenceAvailable
+          ? "Presence unavailable"
+          : channel.data?.name
+            ? `${onlineCount} online`
+            : onlineCount > 0
+              ? "Online"
+              : "Offline",
+        online: presenceAvailable && onlineCount > 0,
+      }
+    : null;
+
   const channelName =
     channel?.data?.name ||
     (channel?.state.members &&
@@ -926,10 +954,19 @@ function WorkspaceHeader({
             {callError}
           </p>
         ) : (
-          <div className="mt-1.5 flex items-center gap-1.5 pl-6 text-[11px] text-slate-500">
-            <span className="size-1.5 rounded-full bg-emerald-400" />
-            Active now
-          </div>
+          presence && (
+            <div
+              key={presenceRevision}
+              className="mt-1.5 flex items-center gap-1.5 pl-6 text-[11px] text-slate-500"
+            >
+              <span
+                className={`size-1.5 rounded-full ${
+                  presence.online ? "bg-emerald-400" : "bg-slate-500"
+                }`}
+              />
+              {presence.label}
+            </div>
+          )
         )}
       </div>
       <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5">
