@@ -335,6 +335,7 @@ function SidebarButton({
 function ChannelRail({ userId }: { userId: string }) {
   const { channel } = useChatContext();
   const [searchQuery, setSearchQuery] = useState("");
+  const [channelListVersion, setChannelListVersion] = useState(0);
 
   return (
     <aside
@@ -399,6 +400,7 @@ function ChannelRail({ userId }: { userId: string }) {
           overrides={{ LoadingErrorIndicator: ChannelListLoadError }}
         >
           <StreamChannelList
+            key={channelListVersion}
             filters={{
               type: "messaging",
               members: { $in: [userId] },
@@ -431,7 +433,11 @@ function ChannelRail({ userId }: { userId: string }) {
           All systems operational
         </span>
       </div>
-      <NewConversation />
+      <NewConversation
+        onChannelCreated={() =>
+          setChannelListVersion((version) => version + 1)
+        }
+      />
     </aside>
   );
 }
@@ -479,7 +485,11 @@ function ConversationEmptyState() {
   );
 }
 
-function NewConversation() {
+function NewConversation({
+  onChannelCreated,
+}: {
+  onChannelCreated: () => void;
+}) {
   const { client } = useChatContext();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -550,6 +560,7 @@ function NewConversation() {
       });
       await channel.create();
       await channel.watch();
+      onChannelCreated();
       setOpen(false);
       setQuery("");
       setSelectedUsers([]);
@@ -569,6 +580,7 @@ function NewConversation() {
       });
       await channel.create();
       await channel.watch();
+      onChannelCreated();
       setOpen(false);
       setQuery("");
       setGroupName("");

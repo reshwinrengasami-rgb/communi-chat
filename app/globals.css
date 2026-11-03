@@ -67,7 +67,7 @@ input {
 }
 
 @media (max-width: 767px) {
-  .str-chat__channel-list {
+  .str-chat.str-chat__theme-dark.str-chat__channel-list {
     position: relative;
     inset: auto;
     z-index: auto;
@@ -76,13 +76,25 @@ input {
     height: 100%;
     width: 100%;
     min-width: 0;
+    min-height: 0;
     max-width: 100%;
     pointer-events: auto;
     transform: none;
     visibility: visible;
   }
 
-  .str-chat__channel-list-inner {
+  .str-chat.str-chat__theme-dark.str-chat__channel-list
+    .str-chat__channel-list-inner {
+    flex: 1 1 0%;
     min-height: 0;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .str-chat.str-chat__theme-dark.str-chat__channel-list
+    .str-chat__channel-list-inner__main {
+    min-height: 0;
+    min-width: 0;
+    width: 100%;
   }
 }
