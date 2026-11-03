@@ -21,11 +21,12 @@ Communichat is a dark-first real-time messaging dashboard built with the Next.js
 | --- | --- |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk application API keys |
 | `CLERK_SECRET_KEY` | Clerk application API keys |
+| `CLERK_WEBHOOK_SIGNING_SECRET` | Signing secret for the Clerk profile webhook |
 | `NEXT_PUBLIC_STREAM_API_KEY` | Stream application dashboard |
 | `STREAM_API_SECRET` | Stream application dashboard; server-side only |
 | `MONGODB_URI` | MongoDB connection string |
 
-The authenticated `/api/stream/token` route provisions the signed-in user in Stream and upserts their MongoDB profile/settings when they open Communichat. No Clerk webhook setup is required.
+The authenticated `/api/stream/token` route provisions the signed-in user in Stream and upserts their MongoDB profile/settings when they open Communichat. To keep profile photos and names current for other users, create a Clerk webhook pointing to `https://<your-domain>/api/webhooks/clerk`, subscribe it to `user.created` and `user.updated`, and set its signing secret as `CLERK_WEBHOOK_SIGNING_SECRET`. The webhook verifies each delivery before syncing the user to Stream.
 
 ## Included features
 
@@ -48,6 +49,7 @@ Incoming-call sound is optional and plays only while Communichat is open. Enable
 ```text
 app/
   api/stream/token/       Authenticated Stream token endpoint
+  api/webhooks/clerk/     Verified Clerk-to-Stream profile sync
   sign-in/                Clerk sign-in page
   sign-up/                Clerk sign-up page
   globals.css             Tailwind base and Stream theme
