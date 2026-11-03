@@ -305,7 +305,7 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
           <div className="mx-auto mb-4 grid size-12 place-items-center rounded-2xl bg-rose-400/10 text-rose-300">
             <Activity size={21} />
           </div>
-          <h1 className="text-lg font-semibold">Could not load your workspace</h1>
+          <h1 className="text-lg font-semibold">Could not load </h1>
           <p className="mt-2 text-sm leading-6 text-slate-400">{loadError}</p>
         </div>
       </div>
@@ -482,10 +482,6 @@ function ChannelRail({
             </span>
             Communichat
           </div>
-          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500">
-            <span className="size-1.5 rounded-full bg-emerald-400" />
-            Your workspace
-          </div>
         </div>
         <button
           aria-label="Create a conversation"
@@ -560,10 +556,7 @@ function ChannelRail({
         </WithComponents>
       </div>
       <div className="border-t border-white/[0.06] px-4 py-3 text-[11px] text-slate-600">
-        <span className="inline-flex items-center gap-2">
-          <span className="size-1.5 rounded-full bg-emerald-400" />
-          All systems operational
-        </span>
+        <span className="block">WinTech Companies</span>    
       </div>
       <NewConversation
         onChannelCreated={() =>
@@ -603,7 +596,7 @@ function ConversationEmptyState() {
           No conversations found
         </p>
         <p className="mt-2 text-xs leading-5 text-slate-400">
-          Start a conversation with someone in your workspace.
+          Start a conversation with someone.
         </p>
         <button
           type="button"
