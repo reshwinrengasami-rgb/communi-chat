@@ -66,6 +66,27 @@ input {
   background: transparent;
 }
 
+.str-chat__channel-list
+  .str-chat__channel-list-item
+  .str-chat__channel-list-item-data
+  .str-chat__summarized-message-preview {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.str-chat__channel-list
+  .str-chat__channel-list-item
+  .str-chat__channel-list-item-data
+  .str-chat__summarized-message-preview__text {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 767px) {
   .str-chat.str-chat__theme-dark.str-chat__channel-list {
     position: relative;
