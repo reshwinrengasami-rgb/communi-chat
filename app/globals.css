@@ -8,8 +8,8 @@
   --foreground: 220 20% 93%;
   --panel: 230 20% 10%;
   --muted: 225 13% 17%;
-  --accent: 252 92% 70%;
-  --border: 225 15% 19%;
+  --accent: 158 64% 42%;
+  --border: 215 16% 84%;
 }
 
 * {
@@ -24,10 +24,26 @@ body {
 body {
   margin: 0;
   background:
-    radial-gradient(ellipse at 68% -12%, rgba(111, 92, 255, 0.11), transparent 38%),
+    radial-gradient(ellipse at 68% -12%, rgba(16, 185, 129, 0.11), transparent 38%),
     hsl(var(--background));
   color: hsl(var(--foreground));
   font-family: Arial, Helvetica, sans-serif;
+}
+
+.communichat-shell {
+  background:
+    radial-gradient(ellipse at 68% -12%, rgba(16, 185, 129, 0.08), transparent 38%),
+    #11121a;
+  color: #e8e8f0;
+  color-scheme: dark;
+}
+
+.communichat-shell[data-theme="light"] {
+  background:
+    radial-gradient(ellipse at 68% -12%, rgba(16, 185, 129, 0.1), transparent 38%),
+    #f1f5f9;
+  color: #0f172a;
+  color-scheme: light;
 }
 
 button,
@@ -36,14 +52,14 @@ input {
 }
 
 ::selection {
-  background: rgba(139, 120, 255, 0.35);
+  background: rgba(16, 185, 129, 0.3);
 }
 
 .str-chat,
 .str-chat__theme-dark {
   height: 100%;
-  --str-chat__primary-color: #9a88ff;
-  --str-chat__active-primary-color: #8973ff;
+  --str-chat__primary-color: #10b981;
+  --str-chat__active-primary-color: #059669;
   --str-chat__background-color: #11121a;
   --str-chat__secondary-background-color: #171821;
   --str-chat__message-textarea-background-color: #171821;
@@ -51,6 +67,84 @@ input {
   --str-chat__text-color: #e8e8f0;
   --str-chat__text-low-emphasis-color: #9092a3;
   --str-chat__border-color: #282a36;
+}
+
+.str-chat__theme-light {
+  --str-chat__primary-color: #059669;
+  --str-chat__active-primary-color: #047857;
+  --str-chat__background-color: #ffffff;
+  --str-chat__secondary-background-color: #f1f5f9;
+  --str-chat__message-textarea-background-color: #f8fafc;
+  --str-chat__surface-color: #f8fafc;
+  --str-chat__text-color: #0f172a;
+  --str-chat__text-low-emphasis-color: #64748b;
+  --str-chat__border-color: #e2e8f0;
+}
+
+.communichat-shell[data-theme="light"]
+  [class~="bg-[#0d0e14]"],
+.communichat-shell[data-theme="light"]
+  [class~="bg-[#101117]"] {
+  background-color: #f8fafc;
+}
+
+.communichat-shell[data-theme="light"]
+  [class~="bg-[#11121a]"],
+.communichat-shell[data-theme="light"]
+  [class~="bg-[#151620]"] {
+  background-color: #ffffff;
+}
+
+.communichat-shell[data-theme="light"]
+  [class~="bg-[#171821]"] {
+  background-color: #f1f5f9;
+}
+
+.communichat-shell[data-theme="light"]
+  [class~="bg-[#151620]/95"] {
+  background-color: rgb(255 255 255 / 95%);
+}
+
+.communichat-shell[data-theme="light"]
+  [class~="bg-black/20"] {
+  background-color: rgb(15 23 42 / 5%);
+}
+
+.communichat-shell[data-theme="light"]
+  [class*="border-white"] {
+  border-color: rgb(15 23 42 / 10%);
+}
+
+.communichat-shell[data-theme="light"]
+  [class*="bg-white/"] {
+  background-color: rgb(15 23 42 / 5%);
+}
+
+.communichat-shell[data-theme="light"]
+  [class~="text-slate-200"] {
+  color: #1e293b;
+}
+
+.communichat-shell[data-theme="light"]
+  [class~="text-slate-300"] {
+  color: #334155;
+}
+
+.communichat-shell[data-theme="light"]
+  [class~="text-slate-400"] {
+  color: #475569;
+}
+
+.communichat-shell[data-theme="light"]
+  [class~="text-slate-500"],
+.communichat-shell[data-theme="light"]
+  [class~="text-slate-600"] {
+  color: #64748b;
+}
+
+.communichat-shell[data-theme="light"]
+  [class~="text-emerald-200"] {
+  color: #047857;
 }
 
 .str-chat__channel-list {
@@ -88,7 +182,7 @@ input {
 }
 
 @media (max-width: 767px) {
-  .str-chat.str-chat__theme-dark.str-chat__channel-list {
+  .str-chat.str-chat__channel-list {
     position: relative;
     inset: auto;
     z-index: auto;
@@ -104,15 +198,14 @@ input {
     visibility: visible;
   }
 
-  .str-chat.str-chat__theme-dark.str-chat__channel-list
-    .str-chat__channel-list-inner {
+  .str-chat.str-chat__channel-list .str-chat__channel-list-inner {
     flex: 1 1 0%;
     min-height: 0;
     min-width: 0;
     width: 100%;
   }
 
-  .str-chat.str-chat__theme-dark.str-chat__channel-list
+  .str-chat.str-chat__channel-list
     .str-chat__channel-list-inner__main {
     min-height: 0;
     min-width: 0;

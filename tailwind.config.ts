@@ -16,7 +16,7 @@ const config: Config = {
         border: "hsl(var(--border))",
       },
       boxShadow: {
-        glow: "0 0 42px rgba(111, 92, 255, 0.18)",
+        glow: "0 0 42px rgba(16, 185, 129, 0.2)",
       },
       animation: {
         "fade-in": "fade-in 250ms ease-out",

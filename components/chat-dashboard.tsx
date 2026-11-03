@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import {
@@ -17,6 +18,8 @@ import {
   PhoneOff,
   Search,
   Settings2,
+  Sun,
+  Moon,
   Users,
   Video,
   X,
@@ -65,15 +68,59 @@ type StreamBootstrap = {
   user: { id: string; name: string; image: string };
 };
 
+type ColorTheme = "light" | "dark";
+
+const themeStorageKey = "communichat:theme";
+
+function getServerTheme(): ColorTheme {
+  return "dark";
+}
+
+function getThemeSnapshot(): ColorTheme {
+  if (typeof window === "undefined") return "dark";
+  const preference = window.localStorage.getItem(themeStorageKey);
+  if (preference === "light" || preference === "dark") return preference;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+function subscribeToTheme(onChange: () => void) {
+  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  window.addEventListener("communichat:theme-change", onChange);
+  mediaQuery.addEventListener("change", onChange);
+  return () => {
+    window.removeEventListener("communichat:theme-change", onChange);
+    mediaQuery.removeEventListener("change", onChange);
+  };
+}
+
+function saveTheme(theme: ColorTheme) {
+  window.localStorage.setItem(themeStorageKey, theme);
+  window.dispatchEvent(new Event("communichat:theme-change"));
+}
+
 export function ChatDashboard({ user }: { user: DashboardUser }) {
   const { user: clerkUser, isLoaded: isClerkUserLoaded } = useUser();
   const clerkUserId = clerkUser?.id;
+  const theme = useSyncExternalStore(
+    subscribeToTheme,
+    getThemeSnapshot,
+    getServerTheme,
+  );
   const [bootstrap, setBootstrap] = useState<StreamBootstrap | null>(null);
   const [chatClient, setChatClient] = useState<StreamChat | null>(null);
   const [videoClient, setVideoClient] = useState<StreamVideoClient | null>(null);
   const [activeCall, setActiveCall] = useState<Call | null>(null);
   const [callNotice, setCallNotice] = useState("");
   const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = theme;
+    root.classList.toggle("dark", theme === "dark");
+    root.style.colorScheme = theme;
+  }, [theme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -249,7 +296,7 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
     return (
       <div className="grid min-h-screen place-items-center">
         <div className="flex items-center gap-3 text-sm text-slate-400">
-          <span className="size-2 animate-pulse rounded-full bg-violet-400" />
+          <span className="size-2 animate-pulse rounded-full bg-emerald-400" />
           Connecting to Communichat…
         </div>
       </div>
@@ -258,18 +305,35 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
 
   return (
     <StreamVideo client={videoClient}>
-      <Chat client={chatClient} theme="str-chat__theme-dark">
-        <WithComponents overrides={{ EmojiPicker: ChatEmojiPicker }}>
-          <div className="flex h-[100dvh] min-h-0 overflow-hidden">
-            <AppSidebar />
+      <Chat client={chatClient} theme={`str-chat__theme-${theme}`}>
+        <WithComponents
+          overrides={{
+            EmojiPicker: () => <ChatEmojiPicker theme={theme} />,
+          }}
+        >
+          <div
+            data-theme={theme}
+            className="communichat-shell flex h-[100dvh] min-h-0 overflow-hidden"
+          >
+            <AppSidebar theme={theme} />
             <section className="flex min-h-0 min-w-0 flex-1">
-              <ChannelRail userId={user.id} />
+              <ChannelRail
+                userId={user.id}
+                theme={theme}
+                onToggleTheme={() =>
+                  saveTheme(theme === "dark" ? "light" : "dark")
+                }
+              />
               <ChatWindow
                 onStartCall={(call) => {
                   setCallNotice("");
                   setActiveCall(call);
                 }}
                 videoClient={videoClient}
+                theme={theme}
+                onToggleTheme={() =>
+                  saveTheme(theme === "dark" ? "light" : "dark")
+                }
               />
             </section>
             {activeCall && videoClient && (
@@ -295,20 +359,20 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
   );
 }
 
-function ChatEmojiPicker() {
+function ChatEmojiPicker({ theme }: { theme: ColorTheme }) {
   return (
     <EmojiPicker
       closeOnEmojiSelect
       placement="top-start"
-      pickerProps={{ theme: "dark" }}
+      pickerProps={{ theme }}
     />
   );
 }
 
-function AppSidebar() {
+function AppSidebar({ theme }: { theme: ColorTheme }) {
   return (
     <aside className="hidden w-[72px] shrink-0 flex-col items-center border-r border-white/[0.07] bg-[#0d0e14] py-5 lg:flex">
-      <div className="grid size-10 place-items-center rounded-2xl bg-gradient-to-br from-violet-400 to-indigo-600 shadow-glow">
+      <div className="grid size-10 place-items-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-glow">
         <MessageCircle size={19} className="text-white" />
       </div>
       <div className="mt-9 flex flex-col gap-3">
@@ -331,7 +395,10 @@ function AppSidebar() {
             appearance={{
               elements: {
                 avatarBox: "size-8",
-                userButtonPopoverCard: "bg-[#171821] border border-white/10",
+                userButtonPopoverCard:
+                  theme === "dark"
+                    ? "bg-[#171821] border border-white/10"
+                    : "bg-white border border-slate-200 text-slate-900",
               },
             }}
           />
@@ -356,7 +423,7 @@ function SidebarButton({
       title={label}
       className={`grid size-10 place-items-center rounded-xl transition ${
         active
-          ? "bg-violet-400/15 text-violet-200"
+          ? "bg-emerald-400/15 text-emerald-200"
           : "text-slate-500 hover:bg-white/[0.06] hover:text-slate-200"
       }`}
     >
@@ -365,7 +432,15 @@ function SidebarButton({
   );
 }
 
-function ChannelRail({ userId }: { userId: string }) {
+function ChannelRail({
+  userId,
+  theme,
+  onToggleTheme,
+}: {
+  userId: string;
+  theme: ColorTheme;
+  onToggleTheme: () => void;
+}) {
   const { channel } = useChatContext();
   const [searchQuery, setSearchQuery] = useState("");
   const [channelListVersion, setChannelListVersion] = useState(0);
@@ -379,7 +454,7 @@ function ChannelRail({ userId }: { userId: string }) {
       <div className="flex h-[76px] items-center justify-between border-b border-white/[0.07] px-5">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-            <span className="grid size-7 place-items-center rounded-lg bg-violet-400/15 text-violet-200 sm:hidden">
+            <span className="grid size-7 place-items-center rounded-lg bg-emerald-400/15 text-emerald-200 sm:hidden">
               <MessageCircle size={14} />
             </span>
             Communichat
@@ -393,17 +468,18 @@ function ChannelRail({ userId }: { userId: string }) {
           aria-label="Create a conversation"
           title="Create a conversation"
           onClick={() => window.dispatchEvent(new Event("communichat:new-chat"))}
-          className="grid size-8 place-items-center rounded-lg border border-white/10 text-slate-400 transition hover:border-violet-300/40 hover:text-violet-200"
+          className="grid size-8 place-items-center rounded-lg border border-white/10 text-slate-400 transition hover:border-emerald-300/40 hover:text-emerald-600"
         >
           <Plus size={16} />
         </button>
+        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         <div className="sm:hidden">
           <UserButton />
         </div>
       </div>
 
       <div className="border-b border-white/[0.06] p-3">
-        <label className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2 text-xs text-slate-500 focus-within:border-violet-300/40">
+        <label         className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2 text-xs text-slate-500 focus-within:border-emerald-300/40">
           <Search size={14} />
           <input
             type="search"
@@ -423,7 +499,7 @@ function ChannelRail({ userId }: { userId: string }) {
         <button
           aria-label="Add conversation"
           onClick={() => window.dispatchEvent(new Event("communichat:new-chat"))}
-          className="text-slate-500 transition hover:text-violet-200"
+          className="text-slate-500 transition hover:text-emerald-600"
         >
           <Plus size={15} />
         </button>
@@ -496,7 +572,7 @@ function ConversationEmptyState() {
     <div className="grid h-full place-items-center px-6 text-center">
       <div className="max-w-xs">
         <MessageCircle
-          className="mx-auto mb-3 text-violet-300"
+          className="mx-auto mb-3 text-emerald-600"
           size={24}
           aria-hidden="true"
         />
@@ -509,7 +585,7 @@ function ConversationEmptyState() {
         <button
           type="button"
           onClick={() => window.dispatchEvent(new Event("communichat:new-chat"))}
-          className="mt-4 rounded-lg bg-violet-500 px-4 py-2 text-xs font-medium text-white transition hover:bg-violet-400"
+          className="mt-4 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-emerald-500"
         >
           New conversation
         </button>
@@ -676,7 +752,7 @@ function NewConversation({
             value={groupName}
             onChange={(event) => setGroupName(event.target.value)}
             placeholder="Channel name"
-            className="mt-3 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-slate-600 focus:border-violet-400/50"
+            className="mt-3 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-slate-600 focus:border-emerald-500/50"
           />
         )}
         <input
@@ -684,7 +760,7 @@ function NewConversation({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search by name or username…"
-          className="mt-5 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-slate-600 focus:border-violet-400/50"
+          className="mt-5 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-slate-600 focus:border-emerald-500/50"
         />
         <div className="mt-3 max-h-64 overflow-y-auto">
           {loading && (
@@ -714,7 +790,7 @@ function NewConversation({
                 );
               }}
               className={`flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition ${
-                selected ? "bg-violet-400/10" : "hover:bg-white/[0.05]"
+                selected ? "bg-emerald-400/10" : "hover:bg-white/[0.05]"
               }`}
             >
               {candidate.image ? (
@@ -725,7 +801,7 @@ function NewConversation({
                   className="size-9 rounded-full object-cover"
                 />
               ) : (
-                <div className="grid size-9 place-items-center rounded-full bg-violet-400/15 text-xs font-semibold text-violet-200">
+                <div className="grid size-9 place-items-center rounded-full bg-emerald-400/15 text-xs font-semibold text-emerald-200">
                   {(candidate.name ?? candidate.id).slice(0, 1).toUpperCase()}
                 </div>
               )}
@@ -736,7 +812,7 @@ function NewConversation({
                 <span
                   className={`grid size-4 place-items-center rounded border text-[10px] ${
                     selected
-                      ? "border-violet-300 bg-violet-400 text-slate-950"
+                      ? "border-emerald-500 bg-emerald-400 text-emerald-950"
                       : "border-white/20"
                   }`}
                 >
@@ -754,7 +830,7 @@ function NewConversation({
           <button
             disabled={!groupName.trim() || selectedUsers.length < 2}
             onClick={() => void startGroup()}
-            className="mt-3 h-10 w-full rounded-lg bg-violet-500 text-sm font-medium text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-3 h-10 w-full rounded-lg bg-emerald-600 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Create channel{selectedUsers.length > 0 ? ` · ${selectedUsers.length} selected` : ""}
           </button>
@@ -767,9 +843,13 @@ function NewConversation({
 function ChatWindow({
   onStartCall,
   videoClient,
+  theme,
+  onToggleTheme,
 }: {
   onStartCall: (call: Call) => void;
   videoClient: StreamVideoClient;
+  theme: ColorTheme;
+  onToggleTheme: () => void;
 }) {
   const { channel } = useChatContext();
 
@@ -782,7 +862,12 @@ function ChatWindow({
       <Channel>
         <Window>
           <div className="flex h-full min-h-0 flex-col">
-            <WorkspaceHeader onStartCall={onStartCall} videoClient={videoClient} />
+            <WorkspaceHeader
+              onStartCall={onStartCall}
+              videoClient={videoClient}
+              theme={theme}
+              onToggleTheme={onToggleTheme}
+            />
             <div className="min-h-0 flex-1 overflow-hidden">
               <MessageList />
             </div>
@@ -802,9 +887,13 @@ function ChatWindow({
 function WorkspaceHeader({
   onStartCall,
   videoClient,
+  theme,
+  onToggleTheme,
 }: {
   onStartCall: (call: Call) => void;
   videoClient: StreamVideoClient;
+  theme: ColorTheme;
+  onToggleTheme: () => void;
 }) {
   const { channel, client, setActiveChannel } = useChatContext();
   const [startingCall, setStartingCall] = useState(false);
@@ -903,9 +992,9 @@ function WorkspaceHeader({
             <ArrowLeft size={17} />
           </button>
           {channel?.data?.name ? (
-            <Hash size={16} className="shrink-0 text-violet-300" />
+            <Hash size={16} className="shrink-0 text-emerald-500" />
           ) : (
-            <MessageCircle size={16} className="shrink-0 text-violet-300" />
+            <MessageCircle size={16} className="shrink-0 text-emerald-500" />
           )}
           <h1 className="truncate text-sm font-semibold">{channelName}</h1>
         </div>
@@ -930,6 +1019,7 @@ function WorkspaceHeader({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5">
+        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         {isGroupAdmin && (
           <button
             type="button"
@@ -977,6 +1067,27 @@ function WorkspaceHeader({
       />
     )}
     </>
+  );
+}
+
+function ThemeToggle({
+  theme,
+  onToggle,
+}: {
+  theme: ColorTheme;
+  onToggle: () => void;
+}) {
+  const nextTheme = theme === "dark" ? "light" : "dark";
+  return (
+    <button
+      type="button"
+      aria-label={`Switch to ${nextTheme} theme`}
+      title={`Switch to ${nextTheme} theme`}
+      onClick={onToggle}
+      className="grid size-8 shrink-0 place-items-center rounded-lg text-emerald-500 transition hover:bg-emerald-500/10"
+    >
+      {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+    </button>
   );
 }
 
@@ -1137,7 +1248,7 @@ function GroupMemberManager({
                       className="size-8 shrink-0 rounded-full object-cover"
                     />
                   ) : (
-                    <div className="grid size-8 shrink-0 place-items-center rounded-full bg-violet-400/15 text-xs font-semibold text-violet-200">
+                    <div className="grid size-8 shrink-0 place-items-center rounded-full bg-emerald-400/15 text-xs font-semibold text-emerald-200">
                       {memberName.slice(0, 1).toUpperCase()}
                     </div>
                   )}
@@ -1162,7 +1273,7 @@ function GroupMemberManager({
                               memberId,
                             )
                           }
-                          className="rounded-lg px-2 py-1.5 text-[11px] text-violet-200 hover:bg-violet-400/10 disabled:opacity-50"
+                          className="rounded-lg px-2 py-1.5 text-[11px] text-emerald-200 hover:bg-emerald-400/10 disabled:opacity-50"
                         >
                           {isModerator ? "Remove admin" : "Make admin"}
                         </button>
@@ -1192,7 +1303,7 @@ function GroupMemberManager({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search by name or username"
             aria-label="Search people to add"
-            className="mt-2 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-slate-600 focus:border-violet-400/50"
+            className="mt-2 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-slate-600 focus:border-emerald-500/50"
           />
           <div className="mt-2 max-h-40 overflow-y-auto">
             {searching && (
@@ -1222,7 +1333,7 @@ function GroupMemberManager({
                         className="size-8 shrink-0 rounded-full object-cover"
                       />
                     ) : (
-                      <div className="grid size-8 shrink-0 place-items-center rounded-full bg-violet-400/15 text-xs font-semibold text-violet-200">
+                      <div className="grid size-8 shrink-0 place-items-center rounded-full bg-emerald-400/15 text-xs font-semibold text-emerald-200">
                         {(user.name ?? user.id).slice(0, 1).toUpperCase()}
                       </div>
                     )}
@@ -1233,7 +1344,7 @@ function GroupMemberManager({
                       type="button"
                       disabled={busyUserId === user.id}
                       onClick={() => void updateMember("add", user.id)}
-                      className="rounded-lg bg-violet-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-400 disabled:opacity-50"
+                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
                     >
                       Add
                     </button>
@@ -1350,11 +1461,11 @@ function IncomingCallDialog({
         className="pointer-events-auto animate-fade-in rounded-2xl border border-white/10 bg-[#151620]/95 p-5 shadow-2xl shadow-black/40 backdrop-blur-xl"
       >
         <div className="flex items-center gap-3">
-          <div className="grid size-11 shrink-0 place-items-center rounded-full bg-violet-400/15 text-violet-200 ring-4 ring-violet-400/[0.06]">
+          <div className="grid size-11 shrink-0 place-items-center rounded-full bg-emerald-400/15 text-emerald-200 ring-4 ring-emerald-400/[0.06]">
             <Phone size={19} className="animate-pulse" />
           </div>
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-300">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-500">
               Incoming call
             </p>
             <h2 id="incoming-call-title" className="mt-1 truncate text-sm font-semibold">

@@ -81,7 +81,7 @@ export function CallSoundToggle() {
         onClick={() => void toggleSound()}
         className={`grid size-9 place-items-center rounded-lg transition ${
           enabled
-            ? "bg-violet-400/10 text-violet-200 hover:bg-violet-400/20"
+            ? "bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20"
             : "text-slate-400 hover:bg-white/[0.06] hover:text-white"
         }`}
       >
