@@ -4,13 +4,11 @@ import {
   useEffect,
   useRef,
   useState,
-  type FormEvent,
   type ReactNode,
 } from "react";
 import {
   ArrowLeft,
   Activity,
-  Clapperboard,
   Hash,
   Headphones,
   MessageCircle,
@@ -23,7 +21,7 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { UserButton } from "@clerk/nextjs";
+import { UserButton, useUser } from "@clerk/nextjs";
 import {
   CallSoundToggle,
   playCallChime,
@@ -40,7 +38,7 @@ import {
   useChatContext,
 } from "stream-chat-react";
 import { EmojiPicker } from "stream-chat-react/emojis";
-import { StreamChat } from "stream-chat";
+import { StreamChat, type Channel as StreamChannel } from "stream-chat";
 import {
   StreamCall,
   StreamVideo,
@@ -68,6 +66,8 @@ type StreamBootstrap = {
 };
 
 export function ChatDashboard({ user }: { user: DashboardUser }) {
+  const { user: clerkUser, isLoaded: isClerkUserLoaded } = useUser();
+  const clerkUserId = clerkUser?.id;
   const [bootstrap, setBootstrap] = useState<StreamBootstrap | null>(null);
   const [chatClient, setChatClient] = useState<StreamChat | null>(null);
   const [videoClient, setVideoClient] = useState<StreamVideoClient | null>(null);
@@ -139,6 +139,39 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isClerkUserLoaded || !clerkUserId || !chatClient) return;
+    let cancelled = false;
+
+    async function syncProfile() {
+      try {
+        const response = await fetch("/api/stream/token", { method: "POST" });
+        if (!response.ok) {
+          throw new Error(
+            `Profile sync failed: ${response.status} ${await response.text()}`,
+          );
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Unable to sync profile photo with chat", error);
+        }
+      }
+    }
+
+    void syncProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    chatClient,
+    clerkUserId,
+    clerkUser?.firstName,
+    clerkUser?.imageUrl,
+    clerkUser?.lastName,
+    clerkUser?.username,
+    isClerkUserLoaded,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -754,7 +787,6 @@ function ChatWindow({
               <MessageList />
             </div>
             <div className="flex items-end gap-2 border-t border-white/[0.06] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-5 sm:py-3">
-              <GiphyPicker />
               <div className="min-w-0 flex-1">
                 <MessageComposer focus />
               </div>
@@ -764,89 +796,6 @@ function ChatWindow({
         <Thread />
       </Channel>
     </main>
-  );
-}
-
-function GiphyPicker() {
-  const { channel } = useChatContext();
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
-
-  async function sendGif(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!channel || sending) return;
-
-    setSending(true);
-    setError("");
-    try {
-      const search = query.trim();
-      await channel.sendMessage({ text: search ? `/giphy ${search}` : "/giphy" });
-      setOpen(false);
-      setQuery("");
-    } catch (cause) {
-      console.error("Unable to send Giphy command", cause);
-      setError(
-        "GIFs aren’t enabled for this channel. Enable the Giphy command in your Stream channel type settings.",
-      );
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <div className="relative shrink-0">
-      {open && (
-        <form
-          onSubmit={(event) => void sendGif(event)}
-          className="absolute bottom-12 left-0 z-30 w-[min(320px,calc(100vw-2rem))] animate-fade-in rounded-xl border border-white/10 bg-[#151620] p-3 shadow-2xl"
-        >
-          <label
-            htmlFor="giphy-search"
-            className="text-xs font-medium text-slate-200"
-          >
-            Find a GIF
-          </label>
-          <div className="mt-2 flex gap-2">
-            <input
-              id="giphy-search"
-              autoFocus
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search GIFs, or leave blank for random"
-              className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 text-xs outline-none placeholder:text-slate-600 focus:border-violet-400/50"
-            />
-            <button
-              type="submit"
-              disabled={sending || !channel}
-              className="rounded-lg bg-violet-500 px-3 text-xs font-semibold text-white transition hover:bg-violet-400 disabled:opacity-50"
-            >
-              {sending ? "..." : "Send"}
-            </button>
-          </div>
-          {error && (
-            <p role="alert" className="mt-2 text-[11px] leading-4 text-rose-300">
-              {error}
-            </p>
-          )}
-        </form>
-      )}
-      <button
-        type="button"
-        aria-label="Send a GIF"
-        aria-expanded={open}
-        onClick={() => {
-          setOpen((current) => !current);
-          setError("");
-        }}
-        disabled={!channel}
-        className="flex h-10 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-xs font-semibold text-slate-400 transition hover:border-violet-300/40 hover:bg-violet-400/10 hover:text-violet-200 disabled:opacity-40"
-      >
-        <Clapperboard size={15} />
-        GIF
-      </button>
-    </div>
   );
 }
 
@@ -860,6 +809,7 @@ function WorkspaceHeader({
   const { channel, client, setActiveChannel } = useChatContext();
   const [startingCall, setStartingCall] = useState(false);
   const [callError, setCallError] = useState("");
+  const [membersOpen, setMembersOpen] = useState(false);
   const [presenceRevision, setPresenceRevision] = useState(0);
   useEffect(() => {
     const subscription = client.on("user.presence.changed", () => {
@@ -897,6 +847,15 @@ function WorkspaceHeader({
         .filter(Boolean)
         .join(", ")) ||
     "Choose a conversation";
+  const creatorId = channel?.data?.created_by_id;
+  const isGroupAdmin =
+    Boolean(channel?.data?.name) &&
+    Boolean(
+      client.userID &&
+        (creatorId === client.userID ||
+          channel?.state.members[client.userID]?.channel_role ===
+            "channel_moderator"),
+    );
 
   async function startCall(videoEnabled: boolean) {
     if (!channel?.id || !client.userID) return;
@@ -931,6 +890,7 @@ function WorkspaceHeader({
   }
 
   return (
+    <>
     <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-white/[0.07] px-3 sm:h-[76px] sm:px-7">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
@@ -970,6 +930,17 @@ function WorkspaceHeader({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5">
+        {isGroupAdmin && (
+          <button
+            type="button"
+            aria-label="Manage group members"
+            title="Manage group members"
+            onClick={() => setMembersOpen(true)}
+            className="grid size-9 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+          >
+            <Users size={17} />
+          </button>
+        )}
         <button
           aria-label="Start audio call"
           title="Request an audio call"
@@ -995,6 +966,299 @@ function WorkspaceHeader({
         </div>
       </div>
     </header>
+    {membersOpen && channel?.id && creatorId && client.userID && (
+      <GroupMemberManager
+        channel={channel}
+        channelId={channel.id}
+        creatorId={creatorId}
+        currentUserId={client.userID}
+        canManageRoles={creatorId === client.userID}
+        onClose={() => setMembersOpen(false)}
+      />
+    )}
+    </>
+  );
+}
+
+type GroupMemberAction = "add" | "remove" | "promote" | "demote";
+
+function GroupMemberManager({
+  channel,
+  channelId,
+  creatorId,
+  currentUserId,
+  canManageRoles,
+  onClose,
+}: {
+  channel: StreamChannel;
+  channelId: string;
+  creatorId: string;
+  currentUserId: string;
+  canManageRoles: boolean;
+  onClose: () => void;
+}) {
+  const { client } = useChatContext();
+  const [query, setQuery] = useState("");
+  const [users, setUsers] = useState<
+    Array<{ id: string; name?: string; image?: string }>
+  >([]);
+  const [searching, setSearching] = useState(false);
+  const [busyUserId, setBusyUserId] = useState("");
+  const [error, setError] = useState("");
+  const members = Object.values(channel.state.members);
+
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setSearching(true);
+      setError("");
+      try {
+        const result = await client.queryUsers(
+          query.trim()
+            ? {
+                $or: [
+                  { name: { $autocomplete: query.trim() } },
+                  { id: { $autocomplete: query.trim() } },
+                ],
+              }
+            : {},
+          { name: 1 },
+          { limit: 20 },
+        );
+        if (active) {
+          setUsers(
+            result.users
+              .filter((user) => user.id !== currentUserId)
+              .map((user) => ({
+                id: user.id,
+                name: user.name,
+                image: user.image,
+              })),
+          );
+        }
+      } catch (cause) {
+        console.error("Unable to search group members", cause);
+        if (active) setError("Could not search people. Please try again.");
+      } finally {
+        if (active) setSearching(false);
+      }
+    }, 200);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [client, currentUserId, query]);
+
+  async function updateMember(action: GroupMemberAction, userId: string) {
+    setBusyUserId(userId);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/stream/channels/${encodeURIComponent(channelId)}/members`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, userId }),
+        },
+      );
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(result.error ?? "Could not update group members.");
+      }
+      await channel.watch();
+    } catch (cause) {
+      console.error("Unable to update group members", cause);
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not update group members. Please try again.",
+      );
+    } finally {
+      setBusyUserId("");
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/65 p-4 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="group-members-title"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-[#151620] p-5 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 id="group-members-title" className="text-sm font-semibold">
+              Manage group members
+            </h2>
+            <p className="mt-1 text-xs leading-5 text-slate-400">
+              Group admins can add or remove members. Only the creator can
+              promote or demote admins.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="grid size-8 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-white/5 hover:text-white"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="mt-5">
+          <h3 className="text-xs font-semibold text-slate-200">
+            Members · {members.length}
+          </h3>
+          <div className="mt-2 max-h-56 space-y-1 overflow-y-auto">
+            {members.map((member) => {
+              const memberId = member.user_id ?? member.user?.id;
+              if (!memberId) return null;
+              const isCreator = memberId === creatorId;
+              const isModerator = member.channel_role === "channel_moderator";
+              const memberName = member.user?.name ?? memberId;
+
+              return (
+                <div
+                  key={memberId}
+                  className="flex items-center gap-2 rounded-xl px-2 py-2"
+                >
+                  {member.user?.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={member.user.image}
+                      alt=""
+                      className="size-8 shrink-0 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="grid size-8 shrink-0 place-items-center rounded-full bg-violet-400/15 text-xs font-semibold text-violet-200">
+                      {memberName.slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-slate-200">
+                      {memberName}
+                      {memberId === currentUserId ? " (you)" : ""}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      {isCreator ? "Creator" : isModerator ? "Admin" : "Member"}
+                    </p>
+                  </div>
+                  {!isCreator && (
+                    <div className="flex shrink-0 items-center gap-1">
+                      {canManageRoles && (
+                        <button
+                          type="button"
+                          disabled={busyUserId === memberId}
+                          onClick={() =>
+                            void updateMember(
+                              isModerator ? "demote" : "promote",
+                              memberId,
+                            )
+                          }
+                          className="rounded-lg px-2 py-1.5 text-[11px] text-violet-200 hover:bg-violet-400/10 disabled:opacity-50"
+                        >
+                          {isModerator ? "Remove admin" : "Make admin"}
+                        </button>
+                      )}
+                      {memberId !== currentUserId && (
+                        <button
+                          type="button"
+                          disabled={busyUserId === memberId}
+                          onClick={() => void updateMember("remove", memberId)}
+                          className="rounded-lg px-2 py-1.5 text-[11px] text-rose-300 hover:bg-rose-400/10 disabled:opacity-50"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mt-5 border-t border-white/[0.07] pt-4">
+          <h3 className="text-xs font-semibold text-slate-200">Add people</h3>
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search by name or username"
+            aria-label="Search people to add"
+            className="mt-2 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-slate-600 focus:border-violet-400/50"
+          />
+          <div className="mt-2 max-h-40 overflow-y-auto">
+            {searching && (
+              <p className="px-2 py-3 text-center text-xs text-slate-500">
+                Searching…
+              </p>
+            )}
+            {!searching &&
+              users
+                .filter(
+                  (user) =>
+                    !members.some(
+                      (member) =>
+                        (member.user_id ?? member.user?.id) === user.id,
+                    ),
+                )
+                .map((user) => (
+                  <div
+                    key={user.id}
+                    className="flex items-center gap-3 rounded-xl px-2 py-2"
+                  >
+                    {user.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={user.image}
+                        alt=""
+                        className="size-8 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="grid size-8 shrink-0 place-items-center rounded-full bg-violet-400/15 text-xs font-semibold text-violet-200">
+                        {(user.name ?? user.id).slice(0, 1).toUpperCase()}
+                      </div>
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
+                      {user.name ?? user.id}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={busyUserId === user.id}
+                      onClick={() => void updateMember("add", user.id)}
+                      className="rounded-lg bg-violet-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-400 disabled:opacity-50"
+                    >
+                      Add
+                    </button>
+                  </div>
+                ))}
+            {!searching &&
+              users.length > 0 &&
+              users.every((user) =>
+                members.some(
+                  (member) => (member.user_id ?? member.user?.id) === user.id,
+                ),
+              ) && (
+                <p className="px-2 py-3 text-center text-xs text-slate-500">
+                  Everyone found is already in this group.
+                </p>
+              )}
+          </div>
+        </div>
+        {error && (
+          <p role="alert" className="mt-3 text-xs leading-5 text-rose-300">
+            {error}
+          </p>
+        )}
+      </section>
+    </div>
   );
 }
 

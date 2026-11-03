@@ -71,3 +71,60 @@ export async function GET() {
     );
   }
 }
+
+export async function POST() {
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const apiKey = process.env.NEXT_PUBLIC_STREAM_API_KEY;
+  const apiSecret = process.env.STREAM_API_SECRET;
+  if (!apiKey || !apiSecret) {
+    console.error("Stream credentials are not configured");
+    return NextResponse.json(
+      { error: "Messaging service is not configured" },
+      { status: 500 },
+    );
+  }
+
+  try {
+    const clerkUser = await currentUser();
+    if (!clerkUser || clerkUser.id !== userId) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const email =
+      clerkUser.primaryEmailAddress?.emailAddress ??
+      clerkUser.emailAddresses[0]?.emailAddress ??
+      "";
+    const name =
+      [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
+      clerkUser.username ||
+      email;
+
+    await syncClerkUser({
+      id: clerkUser.id,
+      emailAddresses: email ? [{ emailAddress: email }] : [],
+      firstName: clerkUser.firstName,
+      lastName: clerkUser.lastName,
+      username: clerkUser.username,
+      imageUrl: clerkUser.imageUrl,
+    });
+
+    const streamServer = StreamChat.getInstance(apiKey, apiSecret);
+    await streamServer.upsertUser({
+      id: userId,
+      name,
+      image: clerkUser.imageUrl,
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Unable to sync Stream user profile", error);
+    return NextResponse.json(
+      { error: "Unable to update chat profile" },
+      { status: 500 },
+    );
+  }
+}
