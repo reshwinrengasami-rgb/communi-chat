@@ -2,7 +2,6 @@
 
 import {
   useEffect,
-  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -27,7 +26,7 @@ import {
 import { UserButton, useUser } from "@clerk/nextjs";
 import {
   CallSoundToggle,
-  playCallChime,
+  startCallRingtone,
 } from "@/components/call-sound-toggle";
 import {
   Channel,
@@ -1414,16 +1413,10 @@ function IncomingCallPrompt({
         call.state.callingState === CallingState.RINGING && !call.isCreatedByMe,
     ) ??
     null;
-  const lastRingingCallId = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!incomingCall) {
-      lastRingingCallId.current = null;
-      return;
-    }
-    if (lastRingingCallId.current === incomingCall.cid) return;
-    lastRingingCallId.current = incomingCall.cid;
-    playCallChime();
+    if (!incomingCall) return;
+    return startCallRingtone();
   }, [incomingCall]);
 
   if (!incomingCall) return null;

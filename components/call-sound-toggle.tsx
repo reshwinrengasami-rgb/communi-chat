@@ -50,6 +50,12 @@ export function playCallChime() {
   });
 }
 
+export function startCallRingtone() {
+  playCallChime();
+  const interval = window.setInterval(playCallChime, 1800);
+  return () => window.clearInterval(interval);
+}
+
 export function CallSoundToggle() {
   const [enabled, setEnabled] = useState(false);
   const [error, setError] = useState("");
