@@ -16,7 +16,6 @@ import {
   Phone,
   PhoneOff,
   Search,
-  Settings2,
   Sun,
   Moon,
   Users,
@@ -335,7 +334,6 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
             data-theme={theme}
             className="communichat-shell flex h-[100dvh] min-h-0 overflow-hidden"
           >
-            <AppSidebar theme={theme} />
             <section className="flex min-h-0 min-w-0 flex-1">
               <ChannelRail
                 userId={user.id}
@@ -392,69 +390,6 @@ function ChatEmojiPicker({ theme }: { theme: ColorTheme }) {
   );
 }
 
-function AppSidebar({ theme }: { theme: ColorTheme }) {
-  return (
-    <aside className="hidden w-[72px] shrink-0 flex-col items-center border-r border-white/[0.07] bg-[#0d0e14] py-5 lg:flex">
-      <div className="grid size-10 place-items-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-glow">
-        <MessageCircle size={19} className="text-white" />
-      </div>
-      <div className="mt-9 flex flex-col gap-3">
-        <SidebarButton label="Messages" active>
-          <MessageCircle size={19} />
-        </SidebarButton>
-        <SidebarButton label="People">
-          <Users size={19} />
-        </SidebarButton>
-        <SidebarButton label="Activity">
-          <Activity size={19} />
-        </SidebarButton>
-      </div>
-      <div className="mt-auto flex flex-col items-center gap-4">
-        <SidebarButton label="Settings">
-          <Settings2 size={19} />
-        </SidebarButton>
-        <div className="rounded-full border border-white/10 p-0.5">
-          <UserButton
-            appearance={{
-              elements: {
-                avatarBox: "size-8",
-                userButtonPopoverCard:
-                  theme === "dark"
-                    ? "bg-[#171821] border border-white/10"
-                    : "bg-white border border-slate-200 text-slate-900",
-              },
-            }}
-          />
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function SidebarButton({
-  children,
-  label,
-  active = false,
-}: {
-  children: ReactNode;
-  label: string;
-  active?: boolean;
-}) {
-  return (
-    <button
-      aria-label={label}
-      title={label}
-      className={`grid size-10 place-items-center rounded-xl transition ${
-        active
-          ? "bg-emerald-400/15 text-emerald-200"
-          : "text-slate-500 hover:bg-white/[0.06] hover:text-slate-200"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
 function ChannelRail({
   userId,
   theme,
@@ -492,7 +427,7 @@ function ChannelRail({
           <Plus size={16} />
         </button>
         <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-        <div className="sm:hidden">
+        <div className="ml-1">
           <UserButton />
         </div>
       </div>
