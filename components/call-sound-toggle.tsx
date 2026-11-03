@@ -1,10 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Volume2, VolumeX } from "lucide-react";
 
 let callAudioContext: AudioContext | null = null;
 let callSoundEnabled = false;
+const callSoundChangeEvent = "communichat:call-sound-change";
+
+function subscribeToCallSound(onChange: () => void) {
+  window.addEventListener(callSoundChangeEvent, onChange);
+  return () => window.removeEventListener(callSoundChangeEvent, onChange);
+}
+
+function getCallSoundSnapshot() {
+  return callSoundEnabled;
+}
+
+function setCallSoundEnabled(enabled: boolean) {
+  callSoundEnabled = enabled;
+  window.dispatchEvent(new Event(callSoundChangeEvent));
+}
 
 async function prepareCallAudio() {
   if (typeof window === "undefined" || !("AudioContext" in window)) {
@@ -57,14 +72,17 @@ export function startCallRingtone() {
 }
 
 export function CallSoundToggle() {
-  const [enabled, setEnabled] = useState(false);
+  const enabled = useSyncExternalStore(
+    subscribeToCallSound,
+    getCallSoundSnapshot,
+    () => false,
+  );
   const [error, setError] = useState("");
 
   async function toggleSound() {
     setError("");
     if (enabled) {
-      callSoundEnabled = false;
-      setEnabled(false);
+      setCallSoundEnabled(false);
       return;
     }
 
@@ -73,8 +91,7 @@ export function CallSoundToggle() {
       return;
     }
 
-    callSoundEnabled = true;
-    setEnabled(true);
+    setCallSoundEnabled(true);
   }
 
   return (
