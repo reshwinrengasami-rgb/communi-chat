@@ -66,8 +66,6 @@ type StreamBootstrap = {
   user: { id: string; name: string; image: string };
 };
 
-type WorkspaceUser = { id: string; name: string; image: string };
-
 type ColorTheme = "light" | "dark";
 
 const themeStorageKey = "communichat:theme";
@@ -603,7 +601,9 @@ function NewConversation({
   const [mode, setMode] = useState<"direct" | "group">("direct");
   const [groupName, setGroupName] = useState("");
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
-  const [users, setUsers] = useState<WorkspaceUser[]>([]);
+  const [users, setUsers] = useState<
+    Array<{ id: string; name?: string; image?: string }>
+  >([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -618,41 +618,39 @@ function NewConversation({
 
   useEffect(() => {
     if (!open) return;
-    const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setLoading(true);
-      setError("");
       try {
-        const response = await fetch(
-          `/api/users?q=${encodeURIComponent(query.trim())}`,
-          { signal: controller.signal },
+        const result = await client.queryUsers(
+          query.trim()
+            ? {
+                $or: [
+                  { name: { $autocomplete: query.trim() } },
+                  { id: { $autocomplete: query.trim() } },
+                ],
+              }
+            : {},
+          { name: 1 },
+          { limit: 20 },
         );
-        const result = (await response.json()) as {
-          users?: WorkspaceUser[];
-          error?: string;
-        };
-        if (!response.ok) {
-          throw new Error(result.error ?? "Could not load people.");
-        }
-        setUsers(result.users ?? []);
+        setUsers(
+          result.users
+            .filter((candidate) => candidate.id !== client.userID)
+            .map((candidate) => ({
+              id: candidate.id,
+              name: candidate.name,
+              image: candidate.image,
+            })),
+        );
       } catch (cause) {
-        if (!controller.signal.aborted) {
-          console.error("Unable to search registered workspace users", cause);
-          setError(
-            cause instanceof Error
-              ? cause.message
-              : "Could not load people. Please try again.",
-          );
-        }
+        console.error("Unable to search workspace members", cause);
+        setError("Could not load people. Please try again.");
       } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        setLoading(false);
       }
     }, 200);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [open, query]);
+    return () => window.clearTimeout(timer);
+  }, [client, open, query]);
 
   async function startConversation(memberId: string) {
     if (!client.userID) {
@@ -1110,7 +1108,9 @@ function GroupMemberManager({
 }) {
   const { client } = useChatContext();
   const [query, setQuery] = useState("");
-  const [users, setUsers] = useState<WorkspaceUser[]>([]);
+  const [users, setUsers] = useState<
+    Array<{ id: string; name?: string; image?: string }>
+  >([]);
   const [searching, setSearching] = useState(false);
   const [busyUserId, setBusyUserId] = useState("");
   const [error, setError] = useState("");
@@ -1122,30 +1122,32 @@ function GroupMemberManager({
       setSearching(true);
       setError("");
       try {
-        const response = await fetch(
-          `/api/users?q=${encodeURIComponent(query.trim())}`,
+        const result = await client.queryUsers(
+          query.trim()
+            ? {
+                $or: [
+                  { name: { $autocomplete: query.trim() } },
+                  { id: { $autocomplete: query.trim() } },
+                ],
+              }
+            : {},
+          { name: 1 },
+          { limit: 20 },
         );
-        const result = (await response.json()) as {
-          users?: WorkspaceUser[];
-          error?: string;
-        };
-        if (!response.ok) {
-          throw new Error(result.error ?? "Could not search people.");
-        }
         if (active) {
           setUsers(
-            (result.users ?? []).filter((user) => user.id !== currentUserId),
+            result.users
+              .filter((user) => user.id !== currentUserId)
+              .map((user) => ({
+                id: user.id,
+                name: user.name,
+                image: user.image,
+              })),
           );
         }
       } catch (cause) {
-        console.error("Unable to search registered workspace users", cause);
-        if (active) {
-          setError(
-            cause instanceof Error
-              ? cause.message
-              : "Could not search people. Please try again.",
-          );
-        }
+        console.error("Unable to search group members", cause);
+        if (active) setError("Could not search people. Please try again.");
       } finally {
         if (active) setSearching(false);
       }
