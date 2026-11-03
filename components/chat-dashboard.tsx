@@ -16,7 +16,6 @@ import {
   Phone,
   PhoneOff,
   Search,
-  Settings2,
   Sun,
   Moon,
   Users,
@@ -115,7 +114,6 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
   const [activeCall, setActiveCall] = useState<Call | null>(null);
   const [callNotice, setCallNotice] = useState("");
   const [loadError, setLoadError] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -336,7 +334,7 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
             data-theme={theme}
             className="communichat-shell flex h-[100dvh] min-h-0 overflow-hidden"
           >
-            <AppSidebar onOpenSettings={() => setSettingsOpen(true)} />
+            <AppSidebar />
             <section className="flex min-h-0 min-w-0 flex-1">
               <ChannelRail
                 userId={user.id}
@@ -376,13 +374,6 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
                 setActiveCall(call);
               }}
             />
-            {settingsOpen && (
-              <SettingsDialog
-                theme={theme}
-                onChangeTheme={saveTheme}
-                onClose={() => setSettingsOpen(false)}
-              />
-            )}
           </div>
         </WithComponents>
       </Chat>
@@ -400,7 +391,7 @@ function ChatEmojiPicker({ theme }: { theme: ColorTheme }) {
   );
 }
 
-function AppSidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
+function AppSidebar() {
   return (
     <aside className="hidden w-[72px] shrink-0 flex-col items-center border-r border-white/[0.07] bg-[#0d0e14] py-5 lg:flex">
       <div className="grid size-10 place-items-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-glow">
@@ -411,10 +402,8 @@ function AppSidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
           <MessageCircle size={19} />
         </SidebarButton>
       </div>
-      <div className="mt-auto">
-        <SidebarButton label="Settings" onClick={onOpenSettings}>
-          <Settings2 size={19} />
-        </SidebarButton>
+      <div className="mt-auto rounded-full border border-white/10 p-0.5">
+        <UserButton />
       </div>
     </aside>
   );
@@ -424,18 +413,15 @@ function SidebarButton({
   children,
   label,
   active = false,
-  onClick,
 }: {
   children: ReactNode;
   label: string;
   active?: boolean;
-  onClick?: () => void;
 }) {
   return (
     <button
       aria-label={label}
       title={label}
-      onClick={onClick}
       className={`grid size-10 place-items-center rounded-xl transition ${
         active
           ? "bg-emerald-400/15 text-emerald-200"
@@ -444,119 +430,6 @@ function SidebarButton({
     >
       {children}
     </button>
-  );
-}
-
-function SettingsDialog({
-  theme,
-  onChangeTheme,
-  onClose,
-}: {
-  theme: ColorTheme;
-  onChangeTheme: (theme: ColorTheme) => void;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  const isDark = theme === "dark";
-  const panelClass = isDark
-    ? "border-white/10 bg-[#171821] text-white"
-    : "border-slate-200 bg-white text-slate-900";
-  const sectionClass = isDark
-    ? "border-white/10 bg-white/[0.03]"
-    : "border-slate-200 bg-slate-50";
-  const mutedTextClass = isDark ? "text-slate-400" : "text-slate-600";
-  const selectedThemeClass = isDark
-    ? "border-emerald-400 bg-emerald-400/10 text-emerald-200"
-    : "border-emerald-600 bg-emerald-50 text-emerald-800";
-  const unselectedThemeClass = isDark
-    ? "border-white/10 text-slate-300 hover:bg-white/[0.05]"
-    : "border-slate-200 text-slate-700 hover:bg-slate-50";
-
-  return (
-    <div
-      className="fixed inset-0 z-[70] grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-title"
-        className={`w-full max-w-md rounded-2xl border p-5 shadow-2xl ${panelClass}`}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 id="settings-title" className="text-lg font-semibold">
-              Settings
-            </h2>
-            <p className={`mt-1 text-sm ${mutedTextClass}`}>
-              Personalize your Communichat experience.
-            </p>
-          </div>
-          <button
-            type="button"
-            aria-label="Close settings"
-            onClick={onClose}
-            className={`grid size-8 place-items-center rounded-lg ${mutedTextClass} hover:bg-black/5`}
-          >
-            <X size={17} />
-          </button>
-        </div>
-
-        <div className={`mt-5 rounded-xl border p-4 ${sectionClass}`}>
-          <h3 className="text-sm font-medium">Appearance</h3>
-          <p className={`mt-1 text-xs ${mutedTextClass}`}>
-            Choose the color theme for this device.
-          </p>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {(["light", "dark"] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={theme === option}
-                onClick={() => onChangeTheme(option)}
-                className={`rounded-lg border px-3 py-2 text-sm capitalize transition ${
-                  theme === option
-                    ? selectedThemeClass
-                    : unselectedThemeClass
-                }`}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className={`mt-3 flex items-center justify-between gap-4 rounded-xl border p-4 ${sectionClass}`}>
-          <div>
-            <h3 className="text-sm font-medium">Incoming call sound</h3>
-            <p className={`mt-1 text-xs ${mutedTextClass}`}>
-              Play a ringtone while a call is waiting.
-            </p>
-          </div>
-          <CallSoundToggle />
-        </div>
-
-        <div className={`mt-3 flex items-center justify-between gap-4 rounded-xl border p-4 ${sectionClass}`}>
-          <div>
-            <h3 className="text-sm font-medium">Account</h3>
-            <p className={`mt-1 text-xs ${mutedTextClass}`}>
-              Manage your profile and sign-in options.
-            </p>
-          </div>
-          <UserButton />
-        </div>
-      </section>
-    </div>
   );
 }
 
@@ -760,15 +633,24 @@ function NewConversation({
           { name: 1 },
           { limit: 20 },
         );
-        setUsers(
-          result.users
-            .filter((candidate) => candidate.id !== client.userID)
-            .map((candidate) => ({
-              id: candidate.id,
-              name: candidate.name,
-              image: candidate.image,
-            })),
-        );
+        const seenProfiles = new Set<string>();
+        const uniqueUsers = result.users
+          .filter((candidate) => candidate.id !== client.userID)
+          .filter((candidate) => {
+            const name = candidate.name?.trim().toLocaleLowerCase();
+            if (!name) return true;
+
+            const profileKey = `${name}:${candidate.image ?? ""}`;
+            if (seenProfiles.has(profileKey)) return false;
+            seenProfiles.add(profileKey);
+            return true;
+          })
+          .map((candidate) => ({
+            id: candidate.id,
+            name: candidate.name,
+            image: candidate.image,
+          }));
+        setUsers(uniqueUsers);
       } catch (cause) {
         console.error("Unable to search workspace members", cause);
         setError("Could not load people. Please try again.");
@@ -1176,7 +1058,7 @@ function WorkspaceHeader({
         </button>
         <span className="mx-1 h-5 w-px bg-white/10" />
         <CallSoundToggle />
-        <div className="ml-1">
+        <div className="ml-1 lg:hidden">
           <UserButton />
         </div>
       </div>
