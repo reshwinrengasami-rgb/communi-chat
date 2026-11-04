@@ -19,6 +19,7 @@ import {
   PhoneOff,
   Search,
   Settings,
+  SlidersHorizontal,
   Sun,
   Moon,
   Users,
@@ -48,10 +49,12 @@ import {
   StreamVideo,
   StreamVideoClient,
   PaginatedGridLayout,
+  ParticipantView,
   CallingState,
   useCalls,
   useCallStateHooks,
   type Call,
+  type StreamVideoParticipant,
 } from "@stream-io/video-react-sdk";
 import "stream-chat-react/dist/css/index.css";
 import "@stream-io/video-react-sdk/dist/css/styles.css";
@@ -71,6 +74,125 @@ type StreamBootstrap = {
 
 type ColorTheme = "light" | "dark";
 type GroupMenuAction = "members" | "rename";
+type PendingIncomingCall = {
+  call: Call;
+  expiresAt: number;
+  participants: Array<{ id: string; name: string; image: string | undefined }>;
+};
+
+type CameraEffect =
+  | "none"
+  | "mono"
+  | "pop"
+  | "vintage"
+  | "warm"
+  | "cool"
+  | "soft-focus"
+  | "goofy"
+  | "crying"
+  | "water";
+
+const callJoinWindowMs = 5 * 60 * 1000;
+
+function createCameraEffectFilter(effect: Exclude<CameraEffect, "none">) {
+  const filters: Record<Exclude<CameraEffect, "none" | "goofy" | "crying" | "water">, string> = {
+    mono: "grayscale(1)",
+    pop: "saturate(2) contrast(1.15)",
+    vintage: "sepia(0.65) contrast(1.1)",
+    warm: "sepia(0.2) saturate(1.25)",
+    cool: "hue-rotate(15deg) saturate(1.1)",
+    "soft-focus": "blur(3px)",
+  };
+  const overlays: Partial<Record<CameraEffect, string>> = {
+    goofy: "🤪",
+    crying: "😢",
+    water: "💧",
+  };
+
+  return (input: MediaStream) => {
+    let stopped = false;
+    let frame = 0;
+    let video: HTMLVideoElement | null = null;
+    let output: MediaStream | null = null;
+    const stop = () => {
+      stopped = true;
+      cancelAnimationFrame(frame);
+      video?.pause();
+      if (video) video.srcObject = null;
+      output?.getTracks().forEach((track) => track.stop());
+    };
+
+    const transformedStream = new Promise<MediaStream>((resolve, reject) => {
+      if (!input.getVideoTracks().length) {
+        reject(new Error("The camera stream has no video track."));
+        return;
+      }
+
+      const videoElement = document.createElement("video");
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+      if (!context || typeof canvas.captureStream !== "function") {
+        reject(new Error("This browser cannot process camera effects."));
+        return;
+      }
+
+      video = videoElement;
+      videoElement.autoplay = true;
+      videoElement.muted = true;
+      videoElement.playsInline = true;
+      videoElement.srcObject = input;
+
+      const draw = () => {
+        if (stopped) return;
+        context.filter =
+          effect in filters ? filters[effect as keyof typeof filters] : "none";
+        context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+        context.filter = "none";
+
+        const overlay = overlays[effect];
+        if (overlay) {
+          context.font = `${Math.max(32, canvas.width * 0.12)}px sans-serif`;
+          context.textAlign = "center";
+          context.fillText(
+            overlay,
+            canvas.width / 2,
+            effect === "goofy" ? canvas.height * 0.3 : canvas.height * 0.2,
+          );
+        }
+        frame = requestAnimationFrame(draw);
+      };
+
+      videoElement.addEventListener(
+        "loadedmetadata",
+        () => {
+          if (stopped) return;
+          canvas.width = videoElement.videoWidth;
+          canvas.height = videoElement.videoHeight;
+          if (!canvas.width || !canvas.height) {
+            stop();
+            reject(new Error("The camera did not provide a usable video size."));
+            return;
+          }
+
+          output = canvas.captureStream(30);
+          const stream = new MediaStream([
+            ...output.getVideoTracks(),
+            ...input.getAudioTracks(),
+          ]);
+          resolve(stream);
+          draw();
+        },
+        { once: true },
+      );
+      void videoElement.play().catch((error: unknown) => {
+        stop();
+        reject(error);
+      });
+    });
+
+    return { output: transformedStream, stop };
+  };
+}
 
 async function readApiResponse(response: Response): Promise<Record<string, unknown>> {
   const body = await response.text();
@@ -148,6 +270,8 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
   const [recoveredIncomingCall, setRecoveredIncomingCall] =
     useState<Call | null>(null);
   const [activeCall, setActiveCall] = useState<Call | null>(null);
+  const [pendingIncomingCall, setPendingIncomingCall] =
+    useState<PendingIncomingCall | null>(null);
   const [callNotice, setCallNotice] = useState("");
   const [loadError, setLoadError] = useState("");
 
@@ -403,13 +527,33 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
             )}
             <IncomingCallPrompt
               recoveredCall={recoveredIncomingCall}
-              onDismiss={() => setRecoveredIncomingCall(null)}
+              onDecline={(call, participants) => {
+                setPendingIncomingCall({
+                  call,
+                  participants,
+                  expiresAt: Date.now() + callJoinWindowMs,
+                });
+                setRecoveredIncomingCall(null);
+              }}
               onJoin={(call, warning) => {
                 setRecoveredIncomingCall(null);
+                setPendingIncomingCall(null);
                 setCallNotice(warning ?? "");
                 setActiveCall(call);
               }}
             />
+            {pendingIncomingCall && (
+              <DeclinedCallBanner
+                pendingCall={pendingIncomingCall}
+                videoClient={videoClient}
+                onJoin={(call, warning) => {
+                  setPendingIncomingCall(null);
+                  setCallNotice(warning ?? "");
+                  setActiveCall(call);
+                }}
+                onExpire={() => setPendingIncomingCall(null)}
+              />
+            )}
           </div>
         </WithComponents>
       </Chat>
@@ -1631,12 +1775,15 @@ function GroupMemberManager({
 
 function IncomingCallPrompt({
   onJoin,
+  onDecline,
   recoveredCall,
-  onDismiss,
 }: {
   onJoin: (call: Call, cameraWarning?: string) => void;
+  onDecline: (
+    call: Call,
+    participants: PendingIncomingCall["participants"],
+  ) => void;
   recoveredCall: Call | null;
-  onDismiss: () => void;
 }) {
   const calls = useCalls();
   const incomingCall =
@@ -1659,7 +1806,7 @@ function IncomingCallPrompt({
       key={incomingCall.cid}
       call={incomingCall}
       onJoin={onJoin}
-      onDismiss={onDismiss}
+      onDecline={onDecline}
     />
   );
 }
@@ -1667,16 +1814,18 @@ function IncomingCallPrompt({
 function IncomingCallDialog({
   call,
   onJoin,
-  onDismiss,
+  onDecline,
 }: {
   call: Call;
   onJoin: (call: Call, cameraWarning?: string) => void;
-  onDismiss: () => void;
+  onDecline: (
+    call: Call,
+    participants: PendingIncomingCall["participants"],
+  ) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const callerName =
-    call.state.createdBy?.name ?? "A teammate";
+  const callerName = call.state.createdBy?.name ?? "A teammate";
 
   async function acceptCall() {
     setBusy(true);
@@ -1704,9 +1853,25 @@ function IncomingCallDialog({
   async function declineCall() {
     setBusy(true);
     setError("");
+    const participants: PendingIncomingCall["participants"] =
+      call.state.participants
+      .filter((participant) => !participant.isLocalParticipant)
+      .map((participant) => ({
+        id: participant.userId,
+        name: participant.name ?? "Teammate",
+        image: participant.image,
+      }));
+    if (participants.length === 0 && call.state.createdBy) {
+      participants.push({
+        id: call.state.createdBy.id,
+        name: call.state.createdBy.name ?? "Teammate",
+        image: call.state.createdBy.image,
+      });
+    }
+
     try {
       await call.leave({ reject: true, reason: "decline" });
-      onDismiss();
+      onDecline(call, participants);
     } catch (cause) {
       console.error("Unable to decline incoming call", cause);
       setError("Could not decline this call.");
@@ -1765,6 +1930,144 @@ function IncomingCallDialog({
   );
 }
 
+function DeclinedCallBanner({
+  pendingCall,
+  videoClient,
+  onJoin,
+  onExpire,
+}: {
+  pendingCall: PendingIncomingCall;
+  videoClient: StreamVideoClient;
+  onJoin: (call: Call, cameraWarning?: string) => void;
+  onExpire: () => void;
+}) {
+  const [remainingSeconds, setRemainingSeconds] = useState(() =>
+    Math.max(0, Math.ceil((pendingCall.expiresAt - Date.now()) / 1000)),
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const updateRemaining = () => {
+      const remaining = Math.max(
+        0,
+        Math.ceil((pendingCall.expiresAt - Date.now()) / 1000),
+      );
+      setRemainingSeconds(remaining);
+      if (remaining === 0) onExpire();
+    };
+    const interval = window.setInterval(updateRemaining, 1000);
+    updateRemaining();
+    return () => window.clearInterval(interval);
+  }, [onExpire, pendingCall.expiresAt]);
+
+  async function rejoinCall() {
+    setBusy(true);
+    setError("");
+    try {
+      const call = videoClient.call(
+        pendingCall.call.type,
+        pendingCall.call.id,
+      );
+      await call.get();
+      await call.join();
+      let cameraWarning = "";
+      if (call.type !== "audio_call") {
+        try {
+          await call.camera.enable();
+        } catch (cause) {
+          console.error("Unable to enable camera when rejoining call", cause);
+          cameraWarning =
+            "You joined without video. Allow camera access, then turn on your camera.";
+        }
+      }
+      onJoin(call, cameraWarning);
+    } catch (cause) {
+      console.error("Unable to rejoin declined call", cause);
+      setError("This call is no longer active. Try joining from a new invite.");
+      setBusy(false);
+    }
+  }
+
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = String(remainingSeconds % 60).padStart(2, "0");
+
+  return (
+    <div className="pointer-events-none fixed left-1/2 top-4 z-[60] w-[min(520px,calc(100vw-2rem))] -translate-x-1/2">
+      <section
+        role="status"
+        aria-label="Call still active"
+        className="pointer-events-auto rounded-2xl border border-emerald-300/20 bg-[#151620]/95 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex -space-x-2">
+            {pendingCall.participants.slice(0, 4).map((participant) => (
+              <div
+                key={participant.id}
+                aria-label={participant.name}
+                title={participant.name}
+                className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border-2 border-[#151620] bg-slate-700 text-xs font-semibold text-white"
+              >
+                {participant.image ? (
+                  <span
+                    aria-hidden="true"
+                    className="size-full bg-cover bg-center"
+                    style={{
+                      backgroundImage: `url(${JSON.stringify(participant.image)})`,
+                    }}
+                  />
+                ) : (
+                  participant.name.slice(0, 1).toUpperCase()
+                )}
+              </div>
+            ))}
+            {pendingCall.participants.length === 0 && (
+              <div className="grid size-9 place-items-center rounded-full bg-emerald-400/15 text-emerald-200">
+                <Phone size={16} />
+              </div>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">The call is still active</p>
+            <p className="mt-0.5 truncate text-xs text-slate-400">
+              {pendingCall.participants.length > 0
+                ? pendingCall.participants
+                    .slice(0, 3)
+                    .map((participant) => participant.name)
+                    .join(", ")
+                : "Join while people are still there"}
+              {pendingCall.participants.length > 3 ? " and more" : ""}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={busy || remainingSeconds === 0}
+            onClick={() => void rejoinCall()}
+            className="shrink-0 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-400 disabled:opacity-50"
+          >
+            {busy ? "Joining…" : "Join call"}
+          </button>
+        </div>
+        <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
+          <span>This invite closes in {minutes}:{seconds}</span>
+          <button
+            type="button"
+            onClick={onExpire}
+            className="text-slate-400 hover:text-white"
+          >
+            Dismiss
+          </button>
+        </div>
+        {error && (
+          <p role="alert" className="mt-2 text-xs text-rose-300">
+            {error}
+          </p>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function CallOverlay({
   call,
   cameraWarning,
@@ -1815,6 +2118,29 @@ function CallContent({
     if (callingState === "left") onClose();
   }, [callingState, onClose]);
 
+  useEffect(() => {
+    let anotherParticipantJoined = call.state.remoteParticipants.length > 0;
+    const subscription = call.state.remoteParticipants$.subscribe(
+      (participants) => {
+        if (participants.length > 0) anotherParticipantJoined = true;
+      },
+    );
+    const timeout = window.setTimeout(() => {
+      if (anotherParticipantJoined) return;
+      void call
+        .endCall()
+        .then(() => call.leave())
+        .catch((error: unknown) => {
+          console.error("Unable to end unanswered call", error);
+        });
+    }, callJoinWindowMs);
+
+    return () => {
+      window.clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
+  }, [call]);
+
   return (
     <>
       <header className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6 sm:py-4">
@@ -1844,7 +2170,7 @@ function CallContent({
         </p>
       )}
       <div className="relative min-h-0 flex-1 p-2 sm:p-4">
-        <CallStage />
+        <CallStage call={call} />
       </div>
       <div className="flex shrink-0 justify-center border-t border-white/10 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 sm:py-4">
         <CallControls onLeave={() => {
@@ -1856,10 +2182,49 @@ function CallContent({
   );
 }
 
-function CallStage() {
+function CallStage({ call }: { call: Call }) {
+  const [participants, setParticipants] = useState<StreamVideoParticipant[]>(
+    call.state.participants,
+  );
+
+  useEffect(() => {
+    const subscription = call.state.participants$.subscribe(setParticipants);
+    return () => subscription.unsubscribe();
+  }, [call]);
+
+  const screenSharers = participants.filter(
+    (participant) => participant.screenShareStream,
+  );
+
   return (
     <div className="h-full min-h-0 min-w-0 overflow-hidden rounded-2xl bg-[#090a0f]">
-      <PaginatedGridLayout groupSize={2} pageArrowsVisible={false} />
+      {screenSharers.length > 0 ? (
+        <div className="flex h-full min-h-0 flex-col gap-2 p-2">
+          <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-black">
+            {screenSharers.map((participant) => (
+              <ParticipantView
+                key={`${participant.userId}-screen`}
+                participant={participant}
+                trackType="screenShareTrack"
+              />
+            ))}
+          </div>
+          <div className="flex h-28 shrink-0 gap-2 overflow-x-auto">
+            {participants
+              .filter((participant) => !screenSharers.includes(participant))
+              .map((participant) => (
+                <div
+                  key={participant.sessionId}
+                  className="h-full w-40 shrink-0 overflow-hidden rounded-xl"
+                >
+                  <ParticipantView participant={participant} />
+                </div>
+              ))}
+          </div>
+        </div>
+      ) : (
+        <PaginatedGridLayout groupSize={2} pageArrowsVisible={false} />
+      )}
     </div>
   );
 }
@@ -1873,37 +2238,100 @@ function CallControls({ onLeave }: { onLeave: () => void }) {
   const microphone = useMicrophoneState();
   const camera = useCameraState();
   const screenShare = useScreenShareState();
+  const [effect, setEffect] = useState<CameraEffect>("none");
+  const [effectError, setEffectError] = useState("");
+  const [screenShareError, setScreenShareError] = useState("");
+
+  useEffect(() => {
+    if (effect === "none") return;
+    const registration = camera.camera.registerFilter(
+      createCameraEffectFilter(effect),
+    );
+    void registration.registered.catch((error: unknown) => {
+      console.error("Unable to apply camera effect", error);
+      setEffectError("This camera effect could not be applied.");
+    });
+
+    return () => {
+      void registration.unregister().catch((error: unknown) => {
+        console.error("Unable to remove camera effect", error);
+      });
+    };
+  }, [camera.camera, effect]);
 
   return (
-    <div className="flex items-center gap-3">
-      <ControlButton
-        label={microphone.isMute ? "Unmute microphone" : "Mute microphone"}
-        onClick={() => void microphone.microphone.toggle()}
-        active={!microphone.isMute}
-      >
-        <Headphones size={18} />
-      </ControlButton>
-      <ControlButton
-        label={camera.isEnabled ? "Turn camera off" : "Turn camera on"}
-        onClick={() => void camera.camera.toggle()}
-        active={camera.isEnabled}
-      >
-        <Video size={18} />
-      </ControlButton>
-      <ControlButton
-        label={screenShare.isEnabled ? "Stop sharing" : "Share screen"}
-        onClick={() => void screenShare.screenShare.toggle()}
-        active={screenShare.isEnabled}
-      >
-        <Activity size={18} />
-      </ControlButton>
-      <button
-        aria-label="End call"
-        onClick={onLeave}
-        className="grid size-11 place-items-center rounded-full bg-rose-500 text-white transition hover:bg-rose-400"
-      >
-        <X size={19} />
-      </button>
+    <div className="flex flex-col items-center gap-3">
+      <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-slate-300">
+        <SlidersHorizontal size={14} />
+        Camera effect
+        <select
+          aria-label="Camera effect"
+          value={effect}
+          onChange={(event) => {
+            setEffectError("");
+            setEffect(event.target.value as CameraEffect);
+          }}
+          className="max-w-40 bg-transparent text-xs text-white outline-none"
+        >
+          <option value="none">None</option>
+          <option value="mono">Black &amp; white</option>
+          <option value="pop">Pop color</option>
+          <option value="vintage">Vintage</option>
+          <option value="warm">Warm</option>
+          <option value="cool">Cool</option>
+          <option value="soft-focus">Soft focus (whole frame)</option>
+          <option value="goofy">Goofy overlay</option>
+          <option value="crying">Crying overlay</option>
+          <option value="water">Water overlay</option>
+        </select>
+      </label>
+      <div className="flex items-center gap-3">
+        <ControlButton
+          label={microphone.isMute ? "Unmute microphone" : "Mute microphone"}
+          onClick={() => void microphone.microphone.toggle()}
+          active={!microphone.isMute}
+        >
+          <Headphones size={18} />
+        </ControlButton>
+        <ControlButton
+          label={camera.isEnabled ? "Turn camera off" : "Turn camera on"}
+          onClick={() => void camera.camera.toggle()}
+          active={camera.isEnabled}
+        >
+          <Video size={18} />
+        </ControlButton>
+        <ControlButton
+          label={screenShare.isEnabled ? "Stop sharing" : "Share screen"}
+          onClick={() => {
+            setScreenShareError("");
+            void screenShare.screenShare.toggle().catch((error: unknown) => {
+              console.error("Unable to share screen", error);
+              setScreenShareError(
+                "Screen sharing failed. Check browser permissions and try again.",
+              );
+            });
+          }}
+          active={screenShare.isEnabled}
+        >
+          <Activity size={18} />
+        </ControlButton>
+        <button
+          aria-label="End call"
+          onClick={onLeave}
+          className="grid size-11 place-items-center rounded-full bg-rose-500 text-white transition hover:bg-rose-400"
+        >
+          <X size={19} />
+        </button>
+      </div>
+      {(effectError || screenShareError) && (
+        <p role="alert" className="max-w-sm text-center text-xs text-rose-300">
+          {effectError || screenShareError}
+        </p>
+      )}
+      <p className="max-w-md text-center text-[10px] leading-4 text-slate-500">
+        Effects are sent with your video. Soft focus affects the full frame;
+        background replacement and face tracking are not included.
+      </p>
     </div>
   );
 }
