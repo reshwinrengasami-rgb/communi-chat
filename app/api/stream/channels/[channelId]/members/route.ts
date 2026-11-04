@@ -4,14 +4,15 @@ import { StreamChat } from "stream-chat";
 
 export const runtime = "nodejs";
 
-type MemberAction = "add" | "remove" | "promote" | "demote";
+type MemberAction = "add" | "remove" | "promote" | "demote" | "rename";
 
 function isMemberAction(value: unknown): value is MemberAction {
   return (
     value === "add" ||
     value === "remove" ||
     value === "promote" ||
-    value === "demote"
+    value === "demote" ||
+    value === "rename"
   );
 }
 
@@ -45,16 +46,35 @@ export async function POST(
     typeof body !== "object" ||
     body === null ||
     !("action" in body) ||
-    !("userId" in body) ||
-    !isMemberAction(body.action) ||
-    typeof body.userId !== "string" ||
-    !body.userId.trim()
+    !isMemberAction(body.action)
   ) {
     return NextResponse.json({ error: "Invalid member action" }, { status: 400 });
   }
 
   const action = body.action;
-  const targetUserId = body.userId.trim();
+  let targetUserId = "";
+  let groupName = "";
+  if (action === "rename") {
+    if (!("name" in body) || typeof body.name !== "string") {
+      return NextResponse.json({ error: "Invalid group name" }, { status: 400 });
+    }
+    groupName = body.name.trim();
+    if (!groupName || groupName.length > 80) {
+      return NextResponse.json(
+        { error: "Group name must be between 1 and 80 characters" },
+        { status: 400 },
+      );
+    }
+  } else {
+    if (
+      !("userId" in body) ||
+      typeof body.userId !== "string" ||
+      !body.userId.trim()
+    ) {
+      return NextResponse.json({ error: "Invalid member action" }, { status: 400 });
+    }
+    targetUserId = body.userId.trim();
+  }
   const { channelId } = await context.params;
 
   try {
@@ -89,6 +109,11 @@ export async function POST(
         { error: "Only group admins can manage members" },
         { status: 403 },
       );
+    }
+
+    if (action === "rename") {
+      await channel.updatePartial({ set: { name: groupName } });
+      return NextResponse.json({ success: true, name: groupName });
     }
 
     const targetMember = response.members.find(

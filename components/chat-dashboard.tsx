@@ -4,11 +4,13 @@ import {
   useEffect,
   useState,
   useSyncExternalStore,
+  type FormEvent,
   type ReactNode,
 } from "react";
 import {
   ArrowLeft,
   Activity,
+  ChevronDown,
   Hash,
   Headphones,
   MessageCircle,
@@ -896,6 +898,11 @@ function WorkspaceHeader({
   const [startingCall, setStartingCall] = useState(false);
   const [callError, setCallError] = useState("");
   const [membersOpen, setMembersOpen] = useState(false);
+  const [groupMenuOpen, setGroupMenuOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameName, setRenameName] = useState("");
+  const [renameError, setRenameError] = useState("");
+  const [renaming, setRenaming] = useState(false);
   const [presenceRevision, setPresenceRevision] = useState(0);
   useEffect(() => {
     const subscription = client.on("user.presence.changed", () => {
@@ -948,6 +955,39 @@ function WorkspaceHeader({
           channel?.state.members[client.userID]?.channel_role ===
             "channel_moderator"),
     );
+
+  async function renameGroup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!channel?.id || !renameName.trim()) return;
+
+    setRenaming(true);
+    setRenameError("");
+    try {
+      const response = await fetch(
+        `/api/stream/channels/${encodeURIComponent(channel.id)}/members`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "rename", name: renameName.trim() }),
+        },
+      );
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(result.error ?? "Could not rename this group.");
+      }
+
+      await channel.watch();
+      setRenameOpen(false);
+      setRenameName("");
+    } catch (error) {
+      console.error("Unable to rename group", error);
+      setRenameError(
+        error instanceof Error ? error.message : "Could not rename this group.",
+      );
+    } finally {
+      setRenaming(false);
+    }
+  }
 
   async function startCall(videoEnabled: boolean) {
     if (!channel?.id || !client.userID) return;
@@ -1026,15 +1066,53 @@ function WorkspaceHeader({
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
         {isGroupAdmin && (
-          <button
-            type="button"
-            aria-label="Manage group members"
-            title="Manage group members"
-            onClick={() => setMembersOpen(true)}
-            className="grid size-9 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
-          >
-            <Users size={17} />
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              aria-label="Group options"
+              aria-haspopup="menu"
+              aria-expanded={groupMenuOpen}
+              title="Group options"
+              onClick={() => setGroupMenuOpen((open) => !open)}
+              className="flex h-9 items-center gap-1 rounded-lg px-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+            >
+              <Users size={17} />
+              <ChevronDown size={14} />
+            </button>
+            {groupMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-full z-40 mt-2 w-48 rounded-xl border border-white/10 bg-[#171821] p-1.5 shadow-xl"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMembersOpen(true);
+                    setGroupMenuOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/[0.06]"
+                >
+                  <Users size={15} />
+                  Manage members
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setRenameName(channel?.data?.name ?? "");
+                    setRenameError("");
+                    setRenameOpen(true);
+                    setGroupMenuOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/[0.06]"
+                >
+                  <Hash size={15} />
+                  Rename group
+                </button>
+              </div>
+            )}
+          </div>
         )}
         <button
           aria-label="Start audio call"
@@ -1070,6 +1148,59 @@ function WorkspaceHeader({
         canManageRoles={creatorId === client.userID}
         onClose={() => setMembersOpen(false)}
       />
+    )}
+    {renameOpen && isGroupChannel && (
+      <div
+        className="fixed inset-0 z-[60] grid place-items-center bg-black/65 p-4 backdrop-blur-sm"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !renaming) {
+            setRenameOpen(false);
+          }
+        }}
+      >
+        <form
+          onSubmit={(event) => void renameGroup(event)}
+          className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#151620] p-5 shadow-2xl"
+        >
+          <h2 className="text-sm font-semibold">Rename group</h2>
+          <label
+            htmlFor="rename-group"
+            className="mt-4 block text-xs text-slate-400"
+          >
+            Group name
+          </label>
+          <input
+            id="rename-group"
+            autoFocus
+            maxLength={80}
+            value={renameName}
+            onChange={(event) => setRenameName(event.target.value)}
+            className="mt-2 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-emerald-500/50"
+          />
+          {renameError && (
+            <p role="alert" className="mt-2 text-xs text-rose-300">
+              {renameError}
+            </p>
+          )}
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={renaming}
+              onClick={() => setRenameOpen(false)}
+              className="rounded-lg px-3 py-2 text-xs text-slate-300 hover:bg-white/[0.06] disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={renaming || !renameName.trim()}
+              className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+            >
+              {renaming ? "Saving…" : "Save name"}
+            </button>
+          </div>
+        </form>
+      </div>
     )}
     </>
   );
