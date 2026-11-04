@@ -543,7 +543,7 @@ function ChannelRail({
               type: "messaging",
               members: { $in: [userId] },
             }}
-            sort={{ last_message_at: -1 }}
+            sort={{ created_at: -1 }}
             options={{ state: true, watch: true, presence: true }}
             channelRenderFilterFn={(channels) => {
               const query = searchQuery.trim().toLowerCase();
@@ -764,7 +764,7 @@ function NewConversation({
   }
 
   async function startGroup() {
-    if (!client.userID || selectedUsers.length < 2 || !groupName.trim()) return;
+    if (!client.userID || selectedUsers.length < 1 || !groupName.trim()) return;
     setError("");
     try {
       const channel = client.channel("messaging", {
@@ -918,11 +918,11 @@ function NewConversation({
         </div>
         {mode === "group" && (
           <button
-            disabled={!groupName.trim() || selectedUsers.length < 2}
+            disabled={!groupName.trim() || selectedUsers.length < 1}
             onClick={() => void startGroup()}
             className="mt-3 h-10 w-full rounded-lg bg-emerald-600 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Create channel{selectedUsers.length > 0 ? ` · ${selectedUsers.length} selected` : ""}
+            Create group{selectedUsers.length > 0 ? ` · ${selectedUsers.length} selected` : ""}
           </button>
         )}
       </section>
