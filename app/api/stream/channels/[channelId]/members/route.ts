@@ -65,9 +65,13 @@ export async function POST(
       members: { limit: 100 },
     });
 
-    if (response.channel.type !== "messaging" || !response.channel.name) {
+    const isGroupChannel = Boolean(
+      response.channel.is_group ||
+        (response.channel.name && response.members.length > 2),
+    );
+    if (response.channel.type !== "messaging" || !isGroupChannel) {
       return NextResponse.json(
-        { error: "This channel does not support member management" },
+        { error: "Member management is only available in group channels" },
         { status: 404 },
       );
     }

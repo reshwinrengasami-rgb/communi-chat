@@ -681,6 +681,7 @@ function NewConversation({
     try {
       const channel = client.channel("messaging", {
         name: groupName.trim(),
+        is_group: true,
         members: [client.userID, ...selectedUsers],
       });
       await channel.create();
@@ -933,8 +934,14 @@ function WorkspaceHeader({
         .join(", ")) ||
     "Choose a conversation";
   const creatorId = channel?.data?.created_by_id;
+  const isGroupChannel = Boolean(
+    channel &&
+      (channel.data?.is_group ||
+        (channel.data?.name &&
+          Object.keys(channel.state.members).length > 2)),
+  );
   const isGroupAdmin =
-    Boolean(channel?.data?.name) &&
+    isGroupChannel &&
     Boolean(
       client.userID &&
         (creatorId === client.userID ||
@@ -1054,7 +1061,7 @@ function WorkspaceHeader({
         </div>
       </div>
     </header>
-    {membersOpen && channel?.id && creatorId && client.userID && (
+    {membersOpen && isGroupChannel && channel?.id && creatorId && client.userID && (
       <GroupMemberManager
         channel={channel}
         channelId={channel.id}
@@ -1256,7 +1263,11 @@ function GroupMemberManager({
                       {memberId === currentUserId ? " (you)" : ""}
                     </p>
                     <p className="text-[11px] text-slate-500">
-                      {isCreator ? "Creator" : isModerator ? "Admin" : "Member"}
+                      {isCreator
+                        ? "Creator · Admin"
+                        : isModerator
+                          ? "Admin"
+                          : "Member"}
                     </p>
                   </div>
                   {!isCreator && (
