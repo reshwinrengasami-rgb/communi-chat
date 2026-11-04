@@ -72,6 +72,27 @@ type StreamBootstrap = {
 type ColorTheme = "light" | "dark";
 type GroupMenuAction = "members" | "rename";
 
+async function readApiResponse(response: Response): Promise<Record<string, unknown>> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    await response.text();
+    if (response.status === 404) {
+      throw new Error(
+        "The group settings API is missing from this deployment. Deploy the latest commit, then refresh.",
+      );
+    }
+    throw new Error(
+      `The server returned a non-JSON response (HTTP ${response.status}). Refresh and try again.`,
+    );
+  }
+
+  const result: unknown = await response.json();
+  if (typeof result !== "object" || result === null || Array.isArray(result)) {
+    throw new Error("The server returned an invalid response. Please try again.");
+  }
+  return result as Record<string, unknown>;
+}
+
 function isGroupChannel(channel?: StreamChannel) {
   return Boolean(
     channel &&
@@ -964,23 +985,23 @@ function WorkspaceHeader({
         const response = await fetch(
           `/api/stream/channels/${encodeURIComponent(groupChannelId)}/members`,
         );
-        const result = (await response.json()) as {
-          creatorId?: string | null;
-          error?: string;
-          isAdmin?: boolean;
-          canManageRoles?: boolean;
-        };
+        const result = await readApiResponse(response);
         if (
           !response.ok ||
           typeof result.isAdmin !== "boolean" ||
           typeof result.canManageRoles !== "boolean"
         ) {
-          throw new Error(result.error ?? "Could not load group permissions.");
+          throw new Error(
+            typeof result.error === "string"
+              ? result.error
+              : "Could not load group permissions.",
+          );
         }
         if (active) {
           setGroupAccess({
             channelId: groupChannelId,
-            creatorId: result.creatorId ?? null,
+            creatorId:
+              typeof result.creatorId === "string" ? result.creatorId : null,
             isAdmin: result.isAdmin,
             canManageRoles: result.canManageRoles,
           });
@@ -1056,9 +1077,13 @@ function WorkspaceHeader({
           body: JSON.stringify({ action: "rename", name: renameName.trim() }),
         },
       );
-      const result = (await response.json()) as { error?: string };
+      const result = await readApiResponse(response);
       if (!response.ok) {
-        throw new Error(result.error ?? "Could not rename this group.");
+        throw new Error(
+          typeof result.error === "string"
+            ? result.error
+            : "Could not rename this group.",
+        );
       }
 
       await channel.watch();
@@ -1395,9 +1420,13 @@ function GroupMemberManager({
           body: JSON.stringify({ action, userId }),
         },
       );
-      const result = (await response.json()) as { error?: string };
+      const result = await readApiResponse(response);
       if (!response.ok) {
-        throw new Error(result.error ?? "Could not update group members.");
+        throw new Error(
+          typeof result.error === "string"
+            ? result.error
+            : "Could not update group members.",
+        );
       }
       await channel.watch();
     } catch (cause) {
