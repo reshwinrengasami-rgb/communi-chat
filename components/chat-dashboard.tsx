@@ -10,6 +10,7 @@ import {
 import {
   ArrowLeft,
   Activity,
+  ChevronDown,
   Hash,
   Headphones,
   MessageCircle,
@@ -17,8 +18,10 @@ import {
   Phone,
   PhoneOff,
   Search,
+  Settings,
   Sun,
   Moon,
+  Users,
   Video,
   X,
 } from "lucide-react";
@@ -31,17 +34,12 @@ import {
   Channel,
   ChannelList as StreamChannelList,
   Chat,
-  ContextMenu as StreamContextMenu,
-  ContextMenuButton,
   MessageComposer,
   MessageList,
   Thread,
   WithComponents,
   Window,
-  useChannelListItemContext,
   useChatContext,
-  useContextMenuContext,
-  type ContextMenuProps,
 } from "stream-chat-react";
 import { EmojiPicker } from "stream-chat-react/emojis";
 import { StreamChat, type Channel as StreamChannel } from "stream-chat";
@@ -73,10 +71,6 @@ type StreamBootstrap = {
 
 type ColorTheme = "light" | "dark";
 type GroupMenuAction = "members" | "rename";
-type GroupMenuActionDetail = {
-  action: GroupMenuAction;
-  channel: StreamChannel;
-};
 
 function isGroupChannel(channel?: StreamChannel) {
   return Boolean(
@@ -532,10 +526,7 @@ function ChannelRail({
       </div>
       <div className="flex min-h-0 min-w-0 w-full flex-1 overflow-hidden px-2">
         <WithComponents
-          overrides={{
-            LoadingErrorIndicator: ChannelListLoadError,
-            ContextMenu: GroupAwareContextMenu,
-          }}
+          overrides={{ LoadingErrorIndicator: ChannelListLoadError }}
         >
           <StreamChannelList
             key={channelListVersion}
@@ -574,63 +565,6 @@ function ChannelRail({
         }
       />
     </aside>
-  );
-}
-
-function GroupAwareContextMenu(props: ContextMenuProps) {
-  const isChannelListActionMenu = props.className?.includes(
-    "channel-list-item__action-buttons-context-menu",
-  );
-
-  return (
-    <StreamContextMenu {...props}>
-      {props.children}
-      {isChannelListActionMenu && <GroupChannelMenuActions />}
-    </StreamContextMenu>
-  );
-}
-
-function GroupChannelMenuActions() {
-  const { channel } = useChannelListItemContext();
-  const { client, setActiveChannel } = useChatContext();
-  const { closeMenu } = useContextMenuContext();
-  const creatorId = channel.data?.created_by_id;
-  const isGroup = isGroupChannel(channel);
-  const isGroupAdmin = Boolean(
-    isGroup &&
-      client.userID &&
-      (creatorId === client.userID ||
-        channel.state.members[client.userID]?.channel_role ===
-          "channel_moderator"),
-  );
-
-  if (!isGroupAdmin) return null;
-
-  function openGroupAction(action: GroupMenuAction) {
-    closeMenu();
-    setActiveChannel(channel);
-    window.dispatchEvent(
-      new CustomEvent<GroupMenuActionDetail>("communichat:group-action", {
-        detail: { action, channel },
-      }),
-    );
-  }
-
-  return (
-    <>
-      <ContextMenuButton
-        data-testid="manage-group-members"
-        onClick={() => openGroupAction("members")}
-      >
-        Manage members
-      </ContextMenuButton>
-      <ContextMenuButton
-        data-testid="rename-group"
-        onClick={() => openGroupAction("rename")}
-      >
-        Rename group
-      </ContextMenuButton>
-    </>
   );
 }
 
@@ -992,29 +926,11 @@ function WorkspaceHeader({
     action: GroupMenuAction;
     channelId: string;
   } | null>(null);
+  const [groupSettingsOpen, setGroupSettingsOpen] = useState(false);
   const [renameName, setRenameName] = useState("");
   const [renameError, setRenameError] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [presenceRevision, setPresenceRevision] = useState(0);
-  useEffect(() => {
-    function handleGroupAction(event: Event) {
-      const { action, channel: targetChannel } = (
-        event as CustomEvent<GroupMenuActionDetail>
-      ).detail;
-      if (!targetChannel.id) return;
-      setActiveChannel(targetChannel);
-      setGroupAction({ action, channelId: targetChannel.id });
-      if (action === "rename") {
-        setRenameName(targetChannel.data?.name ?? "");
-        setRenameError("");
-      }
-    }
-
-    window.addEventListener("communichat:group-action", handleGroupAction);
-    return () =>
-      window.removeEventListener("communichat:group-action", handleGroupAction);
-  }, [setActiveChannel]);
-
   useEffect(() => {
     const subscription = client.on("user.presence.changed", () => {
       setPresenceRevision((revision) => revision + 1);
@@ -1053,6 +969,24 @@ function WorkspaceHeader({
     "Choose a conversation";
   const creatorId = channel?.data?.created_by_id;
   const isGroup = isGroupChannel(channel);
+  const isGroupAdmin = Boolean(
+    isGroup &&
+      client.userID &&
+      (creatorId === client.userID ||
+        channel?.state.members[client.userID]?.channel_role ===
+          "channel_moderator"),
+  );
+
+  function openGroupAction(action: GroupMenuAction) {
+    if (!channel?.id) return;
+    setGroupSettingsOpen(false);
+    setGroupAction({ action, channelId: channel.id });
+    if (action === "rename") {
+      setRenameName(channel.data?.name ?? "");
+      setRenameError("");
+    }
+  }
+
   async function renameGroup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!channel?.id || !renameName.trim()) return;
@@ -1162,6 +1096,47 @@ function WorkspaceHeader({
         <div className="md:hidden">
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
+        {isGroupAdmin && (
+          <div className="relative">
+            <button
+              type="button"
+              aria-label="Group settings"
+              aria-haspopup="menu"
+              aria-expanded={groupSettingsOpen}
+              title="Group settings"
+              onClick={() => setGroupSettingsOpen((open) => !open)}
+              className="flex h-9 items-center gap-1 rounded-lg px-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+            >
+              <Settings size={17} />
+              <ChevronDown size={14} />
+            </button>
+            {groupSettingsOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-full z-40 mt-2 w-48 rounded-xl border border-white/10 bg-[#171821] p-1.5 shadow-xl"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => openGroupAction("members")}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/[0.06]"
+                >
+                  <Users size={15} />
+                  Manage members
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => openGroupAction("rename")}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/[0.06]"
+                >
+                  <Hash size={15} />
+                  Rename group
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         <button
           aria-label="Start audio call"
           title="Request an audio call"
