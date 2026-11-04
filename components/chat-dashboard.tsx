@@ -73,20 +73,21 @@ type ColorTheme = "light" | "dark";
 type GroupMenuAction = "members" | "rename";
 
 async function readApiResponse(response: Response): Promise<Record<string, unknown>> {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("application/json")) {
-    await response.text();
+  const body = await response.text();
+  let result: unknown;
+  try {
+    result = JSON.parse(body);
+  } catch {
     if (response.status === 404) {
       throw new Error(
         "The group settings API is missing from this deployment. Deploy the latest commit, then refresh.",
       );
     }
     throw new Error(
-      `The server returned a non-JSON response (HTTP ${response.status}). Refresh and try again.`,
+      `The group settings request returned an invalid response (HTTP ${response.status}). Check the deployment and try again.`,
     );
   }
 
-  const result: unknown = await response.json();
   if (typeof result !== "object" || result === null || Array.isArray(result)) {
     throw new Error("The server returned an invalid response. Please try again.");
   }
