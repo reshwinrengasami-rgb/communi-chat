@@ -506,7 +506,7 @@ function ChannelRail({
         >
           <Plus size={16} />
         </button>
-        <div className="md:hidden">
+        <div className={channel?.id ? "hidden" : "block"}>
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
         <div className="ml-1 md:hidden">
@@ -782,7 +782,7 @@ function NewConversation({
             onClick={() => setMode("direct")}
             className={`flex-1 rounded-md py-2 text-xs transition ${
               mode === "direct"
-                ? "bg-white/10 text-white"
+                ? "bg-white/10 text-slate-200"
                 : "text-slate-500 hover:text-slate-300"
             }`}
           >
@@ -792,7 +792,7 @@ function NewConversation({
             onClick={() => setMode("group")}
             className={`flex-1 rounded-md py-2 text-xs transition ${
               mode === "group"
-                ? "bg-white/10 text-white"
+                ? "bg-white/10 text-slate-200"
                 : "text-slate-500 hover:text-slate-300"
             }`}
           >
@@ -1173,7 +1173,7 @@ function WorkspaceHeader({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5">
-        <div className="md:hidden">
+        <div className={channel?.id ? "block" : "hidden"}>
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
         {isGroup && isGroupAdmin && (
