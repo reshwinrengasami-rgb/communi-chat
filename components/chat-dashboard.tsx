@@ -697,11 +697,15 @@ function NewConversation({
     if (!client.userID || selectedUsers.length < 1 || !groupName.trim()) return;
     setError("");
     try {
-      const channel = client.channel("messaging", {
-        name: groupName.trim(),
-        is_group: true,
-        members: [client.userID, ...selectedUsers],
-      });
+      const channel = client.channel(
+        "messaging",
+        crypto.randomUUID(),
+        {
+          name: groupName.trim(),
+          is_group: true,
+          members: [client.userID, ...selectedUsers],
+        },
+      );
       await channel.create();
       await channel.watch();
       setActiveChannel(channel);
