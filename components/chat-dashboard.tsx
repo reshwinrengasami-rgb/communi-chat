@@ -931,12 +931,72 @@ function WorkspaceHeader({
   const [renameError, setRenameError] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [presenceRevision, setPresenceRevision] = useState(0);
+  const [groupAccess, setGroupAccess] = useState<{
+    channelId: string;
+    creatorId: string;
+  } | null>(null);
+  const [groupAccessError, setGroupAccessError] = useState<{
+    channelId: string;
+    message: string;
+  } | null>(null);
+  const channelId = channel?.id;
+  const isGroup = isGroupChannel(channel);
+
   useEffect(() => {
     const subscription = client.on("user.presence.changed", () => {
       setPresenceRevision((revision) => revision + 1);
     });
     return () => subscription.unsubscribe();
   }, [client]);
+
+  useEffect(() => {
+    if (!channelId || !isGroup) return;
+    const groupChannelId = channelId;
+
+    let active = true;
+
+    async function loadGroupAccess() {
+      try {
+        const response = await fetch(
+          `/api/stream/channels/${encodeURIComponent(groupChannelId)}/members`,
+        );
+        const result = (await response.json()) as {
+          creatorId?: string;
+          error?: string;
+        };
+        if (!response.ok || !result.creatorId) {
+          throw new Error(result.error ?? "Could not load group permissions.");
+        }
+        if (active) {
+          setGroupAccess({
+            channelId: groupChannelId,
+            creatorId: result.creatorId,
+          });
+          setGroupAccessError((current) =>
+            current?.channelId === groupChannelId ? null : current,
+          );
+        }
+      } catch (error) {
+        console.error("Unable to load group permissions", error);
+        if (active) {
+          setGroupAccessError(
+            {
+              channelId: groupChannelId,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Could not load group permissions.",
+            },
+          );
+        }
+      }
+    }
+
+    void loadGroupAccess();
+    return () => {
+      active = false;
+    };
+  }, [channelId, isGroup, client.userID]);
 
   const otherMembers = Object.values(channel?.state.members ?? {}).filter(
     (member) => member.user?.id !== client.userID,
@@ -967,15 +1027,22 @@ function WorkspaceHeader({
         .filter(Boolean)
         .join(", ")) ||
     "Choose a conversation";
-  const creatorId = channel?.data?.created_by_id;
-  const isGroup = isGroupChannel(channel);
+  const hasGroupAccess = groupAccess?.channelId === channel?.id;
+  const creatorId = hasGroupAccess
+    ? groupAccess?.creatorId
+    : channel?.data?.created_by_id;
+  const currentUserRole = client.userID
+    ? channel?.state.members[client.userID]?.channel_role
+    : undefined;
   const isGroupAdmin = Boolean(
-    isGroup &&
-      client.userID &&
-      (creatorId === client.userID ||
-        channel?.state.members[client.userID]?.channel_role ===
-          "channel_moderator"),
+    hasGroupAccess &&
+      (groupAccess?.creatorId === client.userID ||
+        currentUserRole === "channel_moderator"),
   );
+  const groupAccessErrorMessage =
+    groupAccessError?.channelId === channel?.id
+      ? groupAccessError?.message ?? ""
+      : "";
 
   function openGroupAction(action: GroupMenuAction) {
     if (!channel?.id) return;
@@ -1072,9 +1139,9 @@ function WorkspaceHeader({
           )}
           <h1 className="truncate text-sm font-semibold">{channelName}</h1>
         </div>
-        {callError ? (
+        {callError || groupAccessErrorMessage ? (
           <p role="alert" className="mt-1.5 truncate pl-6 text-[11px] text-rose-300">
-            {callError}
+            {callError || groupAccessErrorMessage}
           </p>
         ) : (
           presence && (
@@ -1096,7 +1163,7 @@ function WorkspaceHeader({
         <div className="md:hidden">
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
-        {isGroupAdmin && (
+        {isGroup && (!hasGroupAccess || isGroupAdmin) && (
           <div className="relative">
             <button
               type="button"
@@ -1104,8 +1171,9 @@ function WorkspaceHeader({
               aria-haspopup="menu"
               aria-expanded={groupSettingsOpen}
               title="Group settings"
+              disabled={!hasGroupAccess}
               onClick={() => setGroupSettingsOpen((open) => !open)}
-              className="flex h-9 items-center gap-1 rounded-lg px-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+              className="flex h-9 items-center gap-1 rounded-lg px-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:cursor-wait disabled:opacity-50"
             >
               <Settings size={17} />
               <ChevronDown size={14} />
@@ -1166,6 +1234,7 @@ function WorkspaceHeader({
       channel?.id === groupAction.channelId &&
       isGroup &&
       creatorId &&
+      isGroupAdmin &&
       client.userID && (
       <GroupMemberManager
         channel={channel}
@@ -1178,7 +1247,8 @@ function WorkspaceHeader({
     )}
     {groupAction?.action === "rename" &&
       channel?.id === groupAction.channelId &&
-      isGroup && (
+      isGroup &&
+      isGroupAdmin && (
       <div
         className="fixed inset-0 z-[60] grid place-items-center bg-black/65 p-4 backdrop-blur-sm"
         onMouseDown={(event) => {

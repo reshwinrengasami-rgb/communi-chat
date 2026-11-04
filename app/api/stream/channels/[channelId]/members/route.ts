@@ -189,3 +189,66 @@ export async function POST(
     );
   }
 }
+
+export async function GET(
+  _request: Request,
+  context: { params: Promise<{ channelId: string }> },
+) {
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const apiKey = process.env.NEXT_PUBLIC_STREAM_API_KEY;
+  const apiSecret = process.env.STREAM_API_SECRET;
+  if (!apiKey || !apiSecret) {
+    console.error("Stream credentials are not configured");
+    return NextResponse.json(
+      { error: "Messaging service is not configured" },
+      { status: 500 },
+    );
+  }
+
+  try {
+    const { channelId } = await context.params;
+    const streamServer = StreamChat.getInstance(apiKey, apiSecret);
+    const channel = streamServer.channel("messaging", channelId);
+    const response = await channel.query({
+      state: true,
+      members: { limit: 100 },
+    });
+
+    const isGroupChannel = Boolean(
+      response.channel.is_group ||
+        response.channel.name ||
+        (response.channel.member_count ?? response.members.length) > 2,
+    );
+    if (response.channel.type !== "messaging" || !isGroupChannel) {
+      return NextResponse.json(
+        { error: "Group settings are only available in group channels" },
+        { status: 404 },
+      );
+    }
+
+    if (!response.members.some((member) => member.user_id === userId)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const creatorId = response.channel.created_by_id;
+    if (!creatorId) {
+      console.error("Group channel is missing its creator ID", { channelId });
+      return NextResponse.json(
+        { error: "Group creator information is unavailable" },
+        { status: 500 },
+      );
+    }
+
+    return NextResponse.json({ creatorId });
+  } catch (error) {
+    console.error("Unable to load group permissions", error);
+    return NextResponse.json(
+      { error: "Unable to load group permissions" },
+      { status: 500 },
+    );
+  }
+}
