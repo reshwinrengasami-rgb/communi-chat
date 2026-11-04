@@ -456,16 +456,10 @@ function ChannelRail({
   theme: ColorTheme;
   onToggleTheme: () => void;
 }) {
-  const { channel, client } = useChatContext();
+  const { channel } = useChatContext();
   const [searchQuery, setSearchQuery] = useState("");
-  const [channelListVersion, setChannelListVersion] = useState(0);
-
-  useEffect(() => {
-    const subscription = client.on("notification.added_to_channel", () => {
-      setChannelListVersion((version) => version + 1);
-    });
-    return () => subscription.unsubscribe();
-  }, [client]);
+  const [newlyCreatedChannel, setNewlyCreatedChannel] =
+    useState<StreamChannel | null>(null);
 
   return (
     <aside
@@ -529,7 +523,6 @@ function ChannelRail({
           overrides={{ LoadingErrorIndicator: ChannelListLoadError }}
         >
           <StreamChannelList
-            key={channelListVersion}
             filters={{
               type: "messaging",
               members: { $in: [userId] },
@@ -538,9 +531,14 @@ function ChannelRail({
             options={{ state: true, watch: true, presence: true }}
             channelRenderFilterFn={(channels) => {
               const query = searchQuery.trim().toLowerCase();
-              if (!query) return channels;
+              const listedChannels =
+                newlyCreatedChannel &&
+                !channels.some((item) => item.cid === newlyCreatedChannel.cid)
+                  ? [newlyCreatedChannel, ...channels]
+                  : channels;
+              if (!query) return listedChannels;
 
-              return channels.filter((item) => {
+              return listedChannels.filter((item) => {
                 const memberNames = Object.values(item.state.members)
                   .map((member) => member.user?.name ?? "")
                   .join(" ");
@@ -560,9 +558,7 @@ function ChannelRail({
         <span className="block">WinTech Companies</span>    
       </div>
       <NewConversation
-        onChannelCreated={() =>
-          setChannelListVersion((version) => version + 1)
-        }
+        onChannelCreated={setNewlyCreatedChannel}
       />
     </aside>
   );
@@ -614,7 +610,7 @@ function ConversationEmptyState() {
 function NewConversation({
   onChannelCreated,
 }: {
-  onChannelCreated: () => void;
+  onChannelCreated: (channel: StreamChannel) => void;
 }) {
   const { client, setActiveChannel } = useChatContext();
   const [open, setOpen] = useState(false);
@@ -687,7 +683,7 @@ function NewConversation({
       await channel.create();
       await channel.watch();
       setActiveChannel(channel);
-      onChannelCreated();
+      onChannelCreated(channel);
       setOpen(false);
       setQuery("");
       setSelectedUsers([]);
@@ -709,7 +705,7 @@ function NewConversation({
       await channel.create();
       await channel.watch();
       setActiveChannel(channel);
-      onChannelCreated();
+      onChannelCreated(channel);
       setOpen(false);
       setQuery("");
       setGroupName("");
