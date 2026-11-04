@@ -78,6 +78,16 @@ type GroupMenuActionDetail = {
   channel: StreamChannel;
 };
 
+function isGroupChannel(channel?: StreamChannel) {
+  return Boolean(
+    channel &&
+      (channel.data?.is_group ||
+        channel.data?.name ||
+        (channel.data?.member_count ?? Object.keys(channel.state.members).length) >
+          2),
+  );
+}
+
 const themeStorageKey = "communichat:theme";
 
 function getServerTheme(): ColorTheme {
@@ -578,10 +588,7 @@ function GroupChannelMenuActions() {
   const { client, setActiveChannel } = useChatContext();
   const { closeMenu } = useContextMenuContext();
   const creatorId = channel.data?.created_by_id;
-  const isGroup = Boolean(
-    channel.data?.is_group ||
-      (channel.data?.name && Object.keys(channel.state.members).length > 2),
-  );
+  const isGroup = isGroupChannel(channel);
   const isGroupAdmin = Boolean(
     isGroup &&
       client.userID &&
@@ -1032,12 +1039,7 @@ function WorkspaceHeader({
         .join(", ")) ||
     "Choose a conversation";
   const creatorId = channel?.data?.created_by_id;
-  const isGroupChannel = Boolean(
-    channel &&
-      (channel.data?.is_group ||
-        (channel.data?.name &&
-          Object.keys(channel.state.members).length > 2)),
-  );
+  const isGroup = isGroupChannel(channel);
   async function renameGroup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!channel?.id || !renameName.trim()) return;
@@ -1174,7 +1176,7 @@ function WorkspaceHeader({
     </header>
     {groupAction?.action === "members" &&
       channel?.id === groupAction.channelId &&
-      isGroupChannel &&
+      isGroup &&
       creatorId &&
       client.userID && (
       <GroupMemberManager
@@ -1188,7 +1190,7 @@ function WorkspaceHeader({
     )}
     {groupAction?.action === "rename" &&
       channel?.id === groupAction.channelId &&
-      isGroupChannel && (
+      isGroup && (
       <div
         className="fixed inset-0 z-[60] grid place-items-center bg-black/65 p-4 backdrop-blur-sm"
         onMouseDown={(event) => {

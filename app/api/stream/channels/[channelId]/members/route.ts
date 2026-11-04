@@ -87,7 +87,8 @@ export async function POST(
 
     const isGroupChannel = Boolean(
       response.channel.is_group ||
-        (response.channel.name && response.members.length > 2),
+        response.channel.name ||
+        (response.channel.member_count ?? response.members.length) > 2,
     );
     if (response.channel.type !== "messaging" || !isGroupChannel) {
       return NextResponse.json(
