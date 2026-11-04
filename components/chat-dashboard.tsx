@@ -462,9 +462,16 @@ function ChannelRail({
   theme: ColorTheme;
   onToggleTheme: () => void;
 }) {
-  const { channel } = useChatContext();
+  const { channel, client } = useChatContext();
   const [searchQuery, setSearchQuery] = useState("");
   const [channelListVersion, setChannelListVersion] = useState(0);
+
+  useEffect(() => {
+    const subscription = client.on("notification.added_to_channel", () => {
+      setChannelListVersion((version) => version + 1);
+    });
+    return () => subscription.unsubscribe();
+  }, [client]);
 
   return (
     <aside
@@ -675,7 +682,7 @@ function NewConversation({
 }: {
   onChannelCreated: () => void;
 }) {
-  const { client } = useChatContext();
+  const { client, setActiveChannel } = useChatContext();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<"direct" | "group">("direct");
@@ -745,6 +752,7 @@ function NewConversation({
       });
       await channel.create();
       await channel.watch();
+      setActiveChannel(channel);
       onChannelCreated();
       setOpen(false);
       setQuery("");
@@ -766,6 +774,7 @@ function NewConversation({
       });
       await channel.create();
       await channel.watch();
+      setActiveChannel(channel);
       onChannelCreated();
       setOpen(false);
       setQuery("");
@@ -773,7 +782,11 @@ function NewConversation({
       setSelectedUsers([]);
     } catch (cause) {
       console.error("Unable to create group channel", cause);
-      setError("Could not create this channel. Check Stream permissions.");
+      setError(
+        cause instanceof Error
+          ? `Could not create this group: ${cause.message}`
+          : "Could not create this group. Please try again.",
+      );
     }
   }
 
