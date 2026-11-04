@@ -703,7 +703,13 @@ function NewConversation({
         {
           name: groupName.trim(),
           is_group: true,
-          members: [client.userID, ...selectedUsers],
+          members: [
+            { user_id: client.userID, channel_role: "channel_moderator" },
+            ...selectedUsers.map((userId) => ({
+              user_id: userId,
+              channel_role: "channel_member" as const,
+            })),
+          ],
         },
       );
       await channel.create();
@@ -933,11 +939,9 @@ function WorkspaceHeader({
   const [presenceRevision, setPresenceRevision] = useState(0);
   const [groupAccess, setGroupAccess] = useState<{
     channelId: string;
-    creatorId: string;
-  } | null>(null);
-  const [groupAccessError, setGroupAccessError] = useState<{
-    channelId: string;
-    message: string;
+    creatorId: string | null;
+    isAdmin: boolean;
+    canManageRoles: boolean;
   } | null>(null);
   const channelId = channel?.id;
   const isGroup = isGroupChannel(channel);
@@ -961,34 +965,28 @@ function WorkspaceHeader({
           `/api/stream/channels/${encodeURIComponent(groupChannelId)}/members`,
         );
         const result = (await response.json()) as {
-          creatorId?: string;
+          creatorId?: string | null;
           error?: string;
+          isAdmin?: boolean;
+          canManageRoles?: boolean;
         };
-        if (!response.ok || !result.creatorId) {
+        if (
+          !response.ok ||
+          typeof result.isAdmin !== "boolean" ||
+          typeof result.canManageRoles !== "boolean"
+        ) {
           throw new Error(result.error ?? "Could not load group permissions.");
         }
         if (active) {
           setGroupAccess({
             channelId: groupChannelId,
-            creatorId: result.creatorId,
+            creatorId: result.creatorId ?? null,
+            isAdmin: result.isAdmin,
+            canManageRoles: result.canManageRoles,
           });
-          setGroupAccessError((current) =>
-            current?.channelId === groupChannelId ? null : current,
-          );
         }
       } catch (error) {
         console.error("Unable to load group permissions", error);
-        if (active) {
-          setGroupAccessError(
-            {
-              channelId: groupChannelId,
-              message:
-                error instanceof Error
-                  ? error.message
-                  : "Could not load group permissions.",
-            },
-          );
-        }
       }
     }
 
@@ -1029,20 +1027,9 @@ function WorkspaceHeader({
     "Choose a conversation";
   const hasGroupAccess = groupAccess?.channelId === channel?.id;
   const creatorId = hasGroupAccess
-    ? groupAccess?.creatorId
+    ? groupAccess?.creatorId ?? undefined
     : channel?.data?.created_by_id;
-  const currentUserRole = client.userID
-    ? channel?.state.members[client.userID]?.channel_role
-    : undefined;
-  const isGroupAdmin = Boolean(
-    hasGroupAccess &&
-      (groupAccess?.creatorId === client.userID ||
-        currentUserRole === "channel_moderator"),
-  );
-  const groupAccessErrorMessage =
-    groupAccessError?.channelId === channel?.id
-      ? groupAccessError?.message ?? ""
-      : "";
+  const isGroupAdmin = Boolean(hasGroupAccess && groupAccess?.isAdmin);
 
   function openGroupAction(action: GroupMenuAction) {
     if (!channel?.id) return;
@@ -1139,9 +1126,9 @@ function WorkspaceHeader({
           )}
           <h1 className="truncate text-sm font-semibold">{channelName}</h1>
         </div>
-        {callError || groupAccessErrorMessage ? (
+        {callError ? (
           <p role="alert" className="mt-1.5 truncate pl-6 text-[11px] text-rose-300">
-            {callError || groupAccessErrorMessage}
+            {callError}
           </p>
         ) : (
           presence && (
@@ -1163,7 +1150,7 @@ function WorkspaceHeader({
         <div className="md:hidden">
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
-        {isGroup && (!hasGroupAccess || isGroupAdmin) && (
+        {isGroup && isGroupAdmin && (
           <div className="relative">
             <button
               type="button"
@@ -1171,9 +1158,8 @@ function WorkspaceHeader({
               aria-haspopup="menu"
               aria-expanded={groupSettingsOpen}
               title="Group settings"
-              disabled={!hasGroupAccess}
               onClick={() => setGroupSettingsOpen((open) => !open)}
-              className="flex h-9 items-center gap-1 rounded-lg px-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:cursor-wait disabled:opacity-50"
+              className="flex h-9 items-center gap-1 rounded-lg px-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
             >
               <Settings size={17} />
               <ChevronDown size={14} />
@@ -1233,15 +1219,16 @@ function WorkspaceHeader({
     {groupAction?.action === "members" &&
       channel?.id === groupAction.channelId &&
       isGroup &&
-      creatorId &&
       isGroupAdmin &&
       client.userID && (
       <GroupMemberManager
         channel={channel}
         channelId={channel.id}
-        creatorId={creatorId}
+        creatorId={creatorId ?? ""}
         currentUserId={client.userID}
-        canManageRoles={creatorId === client.userID}
+        canManageRoles={Boolean(
+          hasGroupAccess && groupAccess?.canManageRoles,
+        )}
         onClose={() => setGroupAction(null)}
       />
     )}

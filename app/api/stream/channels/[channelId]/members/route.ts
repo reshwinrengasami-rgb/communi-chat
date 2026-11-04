@@ -97,7 +97,8 @@ export async function POST(
       );
     }
 
-    const creatorId = response.channel.created_by_id;
+    const creatorId =
+      response.channel.created_by_id ?? response.channel.created_by?.id;
     const requesterIsCreator = creatorId === userId;
     const requesterIsModerator = response.members.some(
       (member) =>
@@ -234,16 +235,20 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const creatorId = response.channel.created_by_id;
-    if (!creatorId) {
-      console.error("Group channel is missing its creator ID", { channelId });
-      return NextResponse.json(
-        { error: "Group creator information is unavailable" },
-        { status: 500 },
-      );
-    }
+    const creatorId =
+      response.channel.created_by_id ?? response.channel.created_by?.id ?? null;
+    const isCreator = creatorId === userId;
+    const isModerator = response.members.some(
+      (member) =>
+        member.user_id === userId &&
+        member.channel_role === "channel_moderator",
+    );
 
-    return NextResponse.json({ creatorId });
+    return NextResponse.json({
+      creatorId,
+      isAdmin: isCreator || isModerator,
+      canManageRoles: isCreator,
+    });
   } catch (error) {
     console.error("Unable to load group permissions", error);
     return NextResponse.json(
