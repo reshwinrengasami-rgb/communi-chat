@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   Bell,
+  BellRing,
   BellOff,
   Music2,
   RotateCcw,
@@ -111,6 +112,20 @@ function decodeVapidPublicKey(value: string) {
   return key;
 }
 
+function matchesVapidPublicKey(
+  subscription: PushSubscription,
+  publicKey: string,
+) {
+  const applicationServerKey = subscription.options.applicationServerKey;
+  if (!applicationServerKey) return false;
+  const existingKey = new Uint8Array(applicationServerKey);
+  const expectedKey = decodeVapidPublicKey(publicKey);
+  return (
+    existingKey.length === expectedKey.length &&
+    existingKey.every((byte, index) => byte === expectedKey[index])
+  );
+}
+
 async function responseError(response: Response, fallback: string) {
   try {
     const body: unknown = await response.json();
@@ -180,6 +195,25 @@ export async function playCallChime(force = false) {
   });
 }
 
+export async function playMessageChime() {
+  if (!(await prepareCallAudio())) return;
+  const audioContext = callAudioContext;
+  if (!audioContext || audioContext.state !== "running") return;
+
+  const start = audioContext.currentTime;
+  const oscillator = audioContext.createOscillator();
+  const volume = audioContext.createGain();
+  oscillator.type = "sine";
+  oscillator.frequency.value = 1046;
+  volume.gain.setValueAtTime(0.0001, start);
+  volume.gain.exponentialRampToValueAtTime(0.07, start + 0.015);
+  volume.gain.exponentialRampToValueAtTime(0.0001, start + 0.16);
+  oscillator.connect(volume);
+  volume.connect(audioContext.destination);
+  oscillator.start(start);
+  oscillator.stop(start + 0.17);
+}
+
 export function startCallRingtone() {
   void playCallChime();
   const interval = window.setInterval(() => void playCallChime(), 1800);
@@ -202,8 +236,9 @@ export async function showIncomingCallNotification(
   const options: NotificationOptions = {
     body: `${callerName} invited you to join a call. Tap to open Communichat.`,
     tag: `communichat-call-${callCid}`,
-    data: { callCid },
+    data: { callCid, type: "call" },
     requireInteraction: true,
+    silent: false,
   };
 
   if ("serviceWorker" in navigator) {
@@ -418,6 +453,8 @@ export function CallNotificationsToggle() {
     () => false,
   );
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -533,8 +570,31 @@ export function CallNotificationsToggle() {
         throw new Error("The server returned an invalid Web Push public key.");
       }
 
-      const existingSubscription =
+      let existingSubscription =
         await readyRegistration.pushManager.getSubscription();
+      if (
+        existingSubscription &&
+        !matchesVapidPublicKey(existingSubscription, publicKeyResult.publicKey)
+      ) {
+        const removeResponse = await fetch("/api/push-subscriptions", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: existingSubscription.endpoint }),
+        });
+        if (!removeResponse.ok) {
+          throw new Error(
+            await responseError(
+              removeResponse,
+              "Could not replace the old browser notification subscription.",
+            ),
+          );
+        }
+        const unsubscribed = await existingSubscription.unsubscribe();
+        if (!unsubscribed) {
+          throw new Error("The browser could not replace its old notification subscription.");
+        }
+        existingSubscription = null;
+      }
       const subscription =
         existingSubscription ??
         (await readyRegistration.pushManager.subscribe({
@@ -579,6 +639,35 @@ export function CallNotificationsToggle() {
     }
   }
 
+  async function sendTestNotification() {
+    setError("");
+    setMessage("");
+    setTesting(true);
+    try {
+      const response = await fetch("/api/push-subscriptions/test", {
+        method: "POST",
+      });
+      if (!response.ok) {
+        throw new Error(
+          await responseError(
+            response,
+            "The server could not send a test notification.",
+          ),
+        );
+      }
+      setMessage("Test push sent. Check this device’s notification tray.");
+    } catch (cause) {
+      console.error("Unable to show a test call notification", cause);
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not show a notification on this device.",
+      );
+    } finally {
+      setTesting(false);
+    }
+  }
+
   return (
     <div className="relative">
       <button
@@ -601,12 +690,32 @@ export function CallNotificationsToggle() {
       >
         {enabled ? <Bell size={17} /> : <BellOff size={17} />}
       </button>
+      {enabled && (
+        <button
+          type="button"
+          aria-label="Send a push test notification"
+          title="Send a push test notification"
+          disabled={testing}
+          onClick={() => void sendTestNotification()}
+          className="grid size-9 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-50"
+        >
+          <BellRing size={16} />
+        </button>
+      )}
       {error && (
         <p
           role="alert"
           className="absolute right-0 top-full z-50 mt-2 w-64 rounded-lg border border-white/10 bg-[#171821] p-3 text-xs leading-5 text-slate-200 shadow-xl"
         >
           {error}
+        </p>
+      )}
+      {message && (
+        <p
+          role="status"
+          className="absolute right-0 top-full z-50 mt-2 w-64 rounded-lg border border-emerald-400/20 bg-[#171821] p-3 text-xs leading-5 text-emerald-100 shadow-xl"
+        >
+          {message}
         </p>
       )}
     </div>

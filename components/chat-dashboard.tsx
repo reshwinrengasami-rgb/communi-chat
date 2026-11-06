@@ -33,6 +33,7 @@ import { UserButton, useUser } from "@clerk/nextjs";
 import {
   CallNotificationsToggle,
   CallSoundToggle,
+  playMessageChime,
   showIncomingCallNotification,
   startCallRingtone,
 } from "@/components/call-sound-toggle";
@@ -505,6 +506,47 @@ function CommuniChatChannelListItem(props: ChannelListItemUIProps) {
   );
 }
 
+function OpenChannelFromNotification() {
+  const { client, setActiveChannel } = useChatContext();
+  const handledCid = useRef<string | null>(null);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const channelCid = url.searchParams.get("channel");
+    if (!channelCid || handledCid.current === channelCid) return;
+    const separatorIndex = channelCid.indexOf(":");
+    if (separatorIndex < 1 || separatorIndex === channelCid.length - 1) return;
+
+    handledCid.current = channelCid;
+    let active = true;
+    const channel = client.channel(
+      channelCid.slice(0, separatorIndex),
+      channelCid.slice(separatorIndex + 1),
+    );
+    void channel
+      .watch()
+      .then(() => {
+        if (!active) return;
+        setActiveChannel(channel);
+        url.searchParams.delete("channel");
+        window.history.replaceState(
+          window.history.state,
+          "",
+          `${url.pathname}${url.search}${url.hash}`,
+        );
+      })
+      .catch((error: unknown) => {
+        console.error("Unable to open the chat from its notification", error);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [client, setActiveChannel]);
+
+  return null;
+}
+
 const themeStorageKey = "communichat:theme";
 
 function getServerTheme(): ColorTheme {
@@ -553,6 +595,7 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
     useState<PendingIncomingCall | null>(null);
   const [callNotice, setCallNotice] = useState("");
   const [loadError, setLoadError] = useState("");
+  const openedNotificationCall = useRef<string | null>(null);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -660,6 +703,21 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
   ]);
 
   useEffect(() => {
+    if (!chatClient) return;
+    const subscription = chatClient.on("message.new", (event) => {
+      const senderId = event.user?.id ?? event.message?.user?.id;
+      if (
+        senderId === chatClient.userID ||
+        document.visibilityState !== "visible"
+      ) {
+        return;
+      }
+      void playMessageChime();
+    });
+    return () => subscription.unsubscribe();
+  }, [chatClient]);
+
+  useEffect(() => {
     let cancelled = false;
     let connectedChat: StreamChat | null = null;
     let connectedVideo: StreamVideoClient | null = null;
@@ -736,6 +794,35 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!videoClient) return;
+    const url = new URL(window.location.href);
+    const callCid = url.searchParams.get("call");
+    if (!callCid || openedNotificationCall.current === callCid) return;
+    openedNotificationCall.current = callCid;
+    let cancelled = false;
+
+    void videoClient
+      .onRingingCall(callCid)
+      .then((call) => {
+        if (cancelled) return;
+        setRecoveredIncomingCall(call);
+        url.searchParams.delete("call");
+        window.history.replaceState(
+          window.history.state,
+          "",
+          `${url.pathname}${url.search}${url.hash}`,
+        );
+      })
+      .catch((error: unknown) => {
+        console.error("Unable to open the call from its notification", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [videoClient]);
+
   if (loadError) {
     return (
       <div className="grid min-h-screen place-items-center px-6 text-center">
@@ -764,6 +851,7 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
   return (
     <StreamVideo client={videoClient}>
       <Chat client={chatClient} theme={`str-chat__theme-${theme}`}>
+        <OpenChannelFromNotification />
         <WithComponents
           overrides={{
             EmojiPicker: () => <ChatEmojiPicker theme={theme} />,

@@ -1,3 +1,11 @@
+self.addEventListener("install", (event) => {
+  event.waitUntil(self.skipWaiting());
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 self.addEventListener("push", (event) => {
   let payload = {};
   try {
@@ -13,23 +21,24 @@ self.addEventListener("push", (event) => {
       ? payload.body
       : "Someone invited you to join a CommuniChat call.";
   const callCid = typeof payload.callCid === "string" ? payload.callCid : "";
+  const channelCid =
+    typeof payload.channelCid === "string" ? payload.channelCid : "";
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : "";
+  const isCall = payload.type === "call";
 
   event.waitUntil(
-    self.clients
-      .matchAll({ type: "window", includeUncontrolled: true })
-      .then((clients) => {
-        const appIsFocused = clients.some(
-          (client) => client.focused && client.visibilityState === "visible",
-        );
-        if (appIsFocused) return;
-
-        return self.registration.showNotification(title, {
-          body,
-          tag: callCid ? `communichat-call-${callCid}` : "communichat-call",
-          data: { callCid },
-          requireInteraction: true,
-        });
-      }),
+    self.registration.showNotification(title, {
+      body,
+      tag: isCall
+        ? `communichat-call-${callCid}`
+        : messageId
+          ? `communichat-message-${messageId}`
+          : "communichat-message",
+      data: { callCid, channelCid },
+      requireInteraction: isCall,
+      silent: false,
+      vibrate: isCall ? [300, 120, 300, 120, 500] : [180, 80, 180],
+    }),
   );
 });
 
@@ -46,6 +55,11 @@ self.addEventListener("notificationclick", (event) => {
           const targetUrl = new URL("/", self.location.origin);
           if (typeof event.notification.data?.callCid === "string") {
             targetUrl.searchParams.set("call", event.notification.data.callCid);
+          } else if (typeof event.notification.data?.channelCid === "string") {
+            targetUrl.searchParams.set(
+              "channel",
+              event.notification.data.channelCid,
+            );
           }
           return appWindow.navigate(targetUrl.href).then((client) => client?.focus());
         }
@@ -53,6 +67,11 @@ self.addEventListener("notificationclick", (event) => {
         const targetUrl = new URL("/", self.location.origin);
         if (typeof event.notification.data?.callCid === "string") {
           targetUrl.searchParams.set("call", event.notification.data.callCid);
+        } else if (typeof event.notification.data?.channelCid === "string") {
+          targetUrl.searchParams.set(
+            "channel",
+            event.notification.data.channelCid,
+          );
         }
         return self.clients.openWindow(targetUrl.href);
       },
