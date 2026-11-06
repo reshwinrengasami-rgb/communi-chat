@@ -58,35 +58,6 @@ body {
   color: transparent;
 }
 
-.landing-orb {
-  background: radial-gradient(
-    circle at center,
-    rgba(16, 185, 129, 0.2),
-    rgba(16, 185, 129, 0.035) 48%,
-    transparent 72%
-  );
-}
-
-.landing-call-card {
-  animation: landing-call-glow 3s ease-in-out infinite;
-}
-
-@keyframes landing-call-glow {
-  0%,
-  100% {
-    box-shadow: 0 0 0 rgba(52, 211, 153, 0);
-  }
-  50% {
-    box-shadow: 0 0 28px rgba(52, 211, 153, 0.1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .landing-call-card {
-    animation: none;
-  }
-}
-
 .communichat-shell {
   background:
     radial-gradient(ellipse at 68% -12%, rgba(16, 185, 129, 0.08), transparent 38%),

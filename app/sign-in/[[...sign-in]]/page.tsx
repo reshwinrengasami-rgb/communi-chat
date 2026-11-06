@@ -1,10 +1,5 @@
-import { RedirectToSignIn } from "@clerk/nextjs";
-import { Suspense } from "react";
+import { redirect } from "next/navigation";
 
 export default function SignInPage() {
-  return (
-    <Suspense>
-      <RedirectToSignIn />
-    </Suspense>
-  );
+  redirect("/");
 }

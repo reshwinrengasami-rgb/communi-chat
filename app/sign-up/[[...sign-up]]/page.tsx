@@ -1,10 +1,5 @@
-import { RedirectToSignUp } from "@clerk/nextjs";
-import { Suspense } from "react";
+import { redirect } from "next/navigation";
 
 export default function SignUpPage() {
-  return (
-    <Suspense>
-      <RedirectToSignUp />
-    </Suspense>
-  );
+  redirect("/");
 }
