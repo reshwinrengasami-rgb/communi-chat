@@ -36,6 +36,7 @@ import {
   playMessageChime,
   showIncomingCallNotification,
   startCallRingtone,
+  stopCallRingtone,
 } from "@/components/call-sound-toggle";
 import {
   Channel,
@@ -2186,34 +2187,23 @@ function IncomingCallPrompt({
       return;
     }
 
-    const notifyWhileHidden = () => {
-      if (
-        document.visibilityState !== "hidden" ||
-        notifiedCallCid.current === incomingCallCid ||
-        notifyingCallCid.current === incomingCallCid
-      ) {
-        return;
-      }
+    if (
+      notifiedCallCid.current === incomingCallCid ||
+      notifyingCallCid.current === incomingCallCid
+    ) {
+      return;
+    }
 
-      notifyingCallCid.current = incomingCallCid;
-      void showIncomingCallNotification(
-        callerName,
-        incomingCallCid,
-      )
-        .then((shown) => {
-          if (shown) notifiedCallCid.current = incomingCallCid;
-          notifyingCallCid.current = null;
-        })
-        .catch((error: unknown) => {
-          notifyingCallCid.current = null;
-          console.error("Unable to show incoming call notification", error);
-        });
-    };
-
-    notifyWhileHidden();
-    document.addEventListener("visibilitychange", notifyWhileHidden);
-    return () =>
-      document.removeEventListener("visibilitychange", notifyWhileHidden);
+    notifyingCallCid.current = incomingCallCid;
+    void showIncomingCallNotification(callerName, incomingCallCid)
+      .then((shown) => {
+        if (shown) notifiedCallCid.current = incomingCallCid;
+        notifyingCallCid.current = null;
+      })
+      .catch((error: unknown) => {
+        notifyingCallCid.current = null;
+        console.error("Unable to show incoming call notification", error);
+      });
   }, [callerName, incomingCallCid]);
 
   if (!incomingCall) return null;
@@ -2245,6 +2235,7 @@ function IncomingCallDialog({
   const callerName = call.state.createdBy?.name ?? "A teammate";
 
   async function acceptCall() {
+    stopCallRingtone();
     setBusy(true);
     setError("");
     try {
@@ -2263,11 +2254,13 @@ function IncomingCallDialog({
     } catch (cause) {
       console.error("Unable to join incoming call", cause);
       setError("Could not join this call. Please try again.");
+      startCallRingtone();
       setBusy(false);
     }
   }
 
   async function declineCall() {
+    stopCallRingtone();
     setBusy(true);
     setError("");
     const participants: PendingIncomingCall["participants"] =
@@ -2292,6 +2285,7 @@ function IncomingCallDialog({
     } catch (cause) {
       console.error("Unable to decline incoming call", cause);
       setError("Could not decline this call.");
+      startCallRingtone();
       setBusy(false);
     }
   }

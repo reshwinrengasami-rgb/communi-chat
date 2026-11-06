@@ -17,6 +17,8 @@ let callSoundEnabled = true;
 let customCallSound: string | null = null;
 let customCallSoundName: string | null = null;
 let callSoundRevision = 0;
+let activeCallAudio: HTMLAudioElement | null = null;
+let callRingtoneInterval: number | null = null;
 const callSoundChangeEvent = "communichat:call-sound-change";
 const callSoundEnabledStorageKey = "communichat:call-sound-enabled";
 const customCallSoundStorageKey = "communichat:custom-call-sound";
@@ -169,6 +171,7 @@ export async function playCallChime(force = false) {
     try {
       await audio.play();
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
       console.error("Unable to play the selected incoming-call sound", error);
     }
     return;
@@ -215,9 +218,42 @@ export async function playMessageChime() {
 }
 
 export function startCallRingtone() {
+  stopCallRingtone();
+  if (!callSoundEnabled) return stopCallRingtone;
+
+  if (customCallSound) {
+    const audio = new Audio(customCallSound);
+    audio.volume = 0.8;
+    activeCallAudio = audio;
+    audio.addEventListener(
+      "ended",
+      () => {
+        if (activeCallAudio === audio) activeCallAudio = null;
+      },
+      { once: true },
+    );
+    void audio.play().catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      console.error("Unable to play the selected incoming-call sound", error);
+    });
+    return stopCallRingtone;
+  }
+
   void playCallChime();
-  const interval = window.setInterval(() => void playCallChime(), 1800);
-  return () => window.clearInterval(interval);
+  callRingtoneInterval = window.setInterval(() => void playCallChime(), 1800);
+  return stopCallRingtone;
+}
+
+export function stopCallRingtone() {
+  if (callRingtoneInterval !== null) {
+    window.clearInterval(callRingtoneInterval);
+    callRingtoneInterval = null;
+  }
+  if (activeCallAudio) {
+    activeCallAudio.pause();
+    activeCallAudio.currentTime = 0;
+    activeCallAudio = null;
+  }
 }
 
 export async function showIncomingCallNotification(
