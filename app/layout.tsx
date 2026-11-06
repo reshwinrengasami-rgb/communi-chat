@@ -3,8 +3,9 @@ import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Communichat",
-  description: "A calmer space for conversations that move work forward.",
+  title: "CommuniChat — Conversations that move work forward",
+  description:
+    "Message your people, start a call, and join while it is still live with Communichat.",
 };
 
 export const viewport: Viewport = {

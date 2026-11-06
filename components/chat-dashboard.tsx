@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type FormEvent,
@@ -14,12 +15,14 @@ import {
   Hash,
   Headphones,
   MessageCircle,
+  Image as ImageIcon,
   Plus,
   Phone,
   PhoneOff,
   Search,
   Settings,
   SlidersHorizontal,
+  Smile,
   Sun,
   Moon,
   Users,
@@ -28,7 +31,9 @@ import {
 } from "lucide-react";
 import { UserButton, useUser } from "@clerk/nextjs";
 import {
+  CallNotificationsToggle,
   CallSoundToggle,
+  showIncomingCallNotification,
   startCallRingtone,
 } from "@/components/call-sound-toggle";
 import {
@@ -80,45 +85,74 @@ type PendingIncomingCall = {
   participants: Array<{ id: string; name: string; image: string | undefined }>;
 };
 
-type CameraEffect =
+type CameraFilter =
   | "none"
   | "mono"
   | "pop"
   | "vintage"
   | "warm"
-  | "cool"
-  | "soft-focus"
-  | "goofy"
-  | "crying"
-  | "water";
+  | "cool";
+type FaceEmoji = "none" | "goofy" | "crying" | "water";
+type CameraBackground = "none" | "blur" | "mint" | "sunset" | "ocean";
+type CameraEffects = {
+  filter: CameraFilter;
+  faceEmoji: FaceEmoji;
+  background: CameraBackground;
+};
 
 const callJoinWindowMs = 5 * 60 * 1000;
 
-function createCameraEffectFilter(effect: Exclude<CameraEffect, "none">) {
-  const filters: Record<Exclude<CameraEffect, "none" | "goofy" | "crying" | "water">, string> = {
-    mono: "grayscale(1)",
-    pop: "saturate(2) contrast(1.15)",
-    vintage: "sepia(0.65) contrast(1.1)",
-    warm: "sepia(0.2) saturate(1.25)",
-    cool: "hue-rotate(15deg) saturate(1.1)",
-    "soft-focus": "blur(3px)",
-  };
-  const overlays: Partial<Record<CameraEffect, string>> = {
-    goofy: "🤪",
-    crying: "😢",
-    water: "💧",
-  };
+const cameraFilterCss: Record<Exclude<CameraFilter, "none">, string> = {
+  mono: "grayscale(1)",
+  pop: "saturate(2) contrast(1.15)",
+  vintage: "sepia(0.65) contrast(1.1)",
+  warm: "sepia(0.2) saturate(1.25)",
+  cool: "hue-rotate(15deg) saturate(1.1)",
+};
 
+const faceEmojiText: Record<Exclude<FaceEmoji, "none">, string> = {
+  goofy: "🤪",
+  crying: "😭",
+  water: "💦",
+};
+
+function createCameraEffectFilter(
+  effects: CameraEffects,
+  onError: (message: string) => void,
+) {
   return (input: MediaStream) => {
+    if (
+      effects.filter === "none" &&
+      effects.faceEmoji === "none" &&
+      effects.background === "none"
+    ) {
+      return { output: input };
+    }
+
     let stopped = false;
-    let frame = 0;
+    let frameCallback: number | null = null;
+    let fallbackTimer: number | null = null;
+    let inferencePending = false;
+    let lastInferenceAt = 0;
+    let lastDrawAt = 0;
     let video: HTMLVideoElement | null = null;
     let output: MediaStream | null = null;
+    let worker: Worker | null = null;
+    let faces: Array<{ x: number; y: number; width: number; height: number }> =
+      [];
+    let maskCanvas: HTMLCanvasElement | null = null;
+    let maskWidth = 0;
+    let maskHeight = 0;
+
     const stop = () => {
       stopped = true;
-      cancelAnimationFrame(frame);
+      if (frameCallback !== null && video && "cancelVideoFrameCallback" in video) {
+        video.cancelVideoFrameCallback(frameCallback);
+      }
+      if (fallbackTimer !== null) window.clearTimeout(fallbackTimer);
       video?.pause();
       if (video) video.srcObject = null;
+      worker?.terminate();
       output?.getTracks().forEach((track) => track.stop());
     };
 
@@ -131,7 +165,15 @@ function createCameraEffectFilter(effect: Exclude<CameraEffect, "none">) {
       const videoElement = document.createElement("video");
       const canvas = document.createElement("canvas");
       const context = canvas.getContext("2d");
+      const foregroundCanvas = document.createElement("canvas");
+      const foregroundContext = foregroundCanvas.getContext("2d");
+      const inferenceCanvas = document.createElement("canvas");
+      const inferenceContext = inferenceCanvas.getContext("2d");
       if (!context || typeof canvas.captureStream !== "function") {
+        reject(new Error("This browser cannot process camera effects."));
+        return;
+      }
+      if (!foregroundContext || !inferenceContext) {
         reject(new Error("This browser cannot process camera effects."));
         return;
       }
@@ -142,24 +184,225 @@ function createCameraEffectFilter(effect: Exclude<CameraEffect, "none">) {
       videoElement.playsInline = true;
       videoElement.srcObject = input;
 
-      const draw = () => {
-        if (stopped) return;
-        context.filter =
-          effect in filters ? filters[effect as keyof typeof filters] : "none";
-        context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-        context.filter = "none";
+      if (effects.faceEmoji !== "none" || effects.background !== "none") {
+        worker = new Worker(
+          new URL("./camera-effects.worker.ts", import.meta.url),
+          { type: "module" },
+        );
+        worker.onmessage = (
+          event: MessageEvent<{
+            faces?: typeof faces;
+            mask?: ArrayBuffer;
+            maskWidth?: number;
+            maskHeight?: number;
+            error?: string;
+          }>,
+        ) => {
+          inferencePending = false;
+          if (event.data.error) {
+            worker?.terminate();
+            worker = null;
+            faces = [];
+            maskCanvas = null;
+            onError("On-device camera effects could not be loaded.");
+            return;
+          }
+          if (event.data.faces) faces = event.data.faces;
+          if (
+            event.data.mask &&
+            event.data.maskWidth &&
+            event.data.maskHeight
+          ) {
+            maskWidth = event.data.maskWidth;
+            maskHeight = event.data.maskHeight;
+            maskCanvas = document.createElement("canvas");
+            maskCanvas.width = maskWidth;
+            maskCanvas.height = maskHeight;
+            const maskContext = maskCanvas.getContext("2d");
+            if (!maskContext) {
+              onError("Background effects are not supported in this browser.");
+              return;
+            }
 
-        const overlay = overlays[effect];
-        if (overlay) {
-          context.font = `${Math.max(32, canvas.width * 0.12)}px sans-serif`;
-          context.textAlign = "center";
-          context.fillText(
-            overlay,
-            canvas.width / 2,
-            effect === "goofy" ? canvas.height * 0.3 : canvas.height * 0.2,
+            const values = new Float32Array(event.data.mask);
+            const pixels = new Uint8ClampedArray(values.length * 4);
+            for (let index = 0; index < values.length; index += 1) {
+              const pixelIndex = index * 4;
+              pixels[pixelIndex] = 255;
+              pixels[pixelIndex + 1] = 255;
+              pixels[pixelIndex + 2] = 255;
+              pixels[pixelIndex + 3] = Math.round(
+                Math.min(1, Math.max(0, values[index])) * 255,
+              );
+            }
+            maskContext.putImageData(
+              new ImageData(pixels, maskWidth, maskHeight),
+              0,
+              0,
+            );
+          }
+        };
+        worker.onerror = (error) => {
+          console.error("Camera effects worker failed", error);
+          worker?.terminate();
+          worker = null;
+          inferencePending = false;
+          faces = [];
+          maskCanvas = null;
+          onError("On-device camera effects could not be loaded.");
+        };
+      }
+
+      const render = (timestamp: number) => {
+        if (stopped) return;
+        if (timestamp - lastDrawAt >= 1000 / 24) {
+          lastDrawAt = timestamp;
+          const filter =
+            effects.filter === "none"
+              ? "none"
+              : cameraFilterCss[effects.filter];
+          context.clearRect(0, 0, canvas.width, canvas.height);
+
+          if (effects.background === "blur") {
+            context.filter = "blur(18px)";
+            context.drawImage(
+              videoElement,
+              -18,
+              -18,
+              canvas.width + 36,
+              canvas.height + 36,
+            );
+            context.filter = "none";
+          } else if (effects.background !== "none") {
+            const backgrounds: Record<
+              Exclude<CameraBackground, "none" | "blur">,
+              [string, string]
+            > = {
+              mint: ["#a7f3d0", "#0f766e"],
+              sunset: ["#fdba74", "#be185d"],
+              ocean: ["#7dd3fc", "#1d4ed8"],
+            };
+            const colors = backgrounds[effects.background];
+            const gradient = context.createLinearGradient(
+              0,
+              0,
+              canvas.width,
+              canvas.height,
+            );
+            gradient.addColorStop(0, colors[0]);
+            gradient.addColorStop(1, colors[1]);
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, canvas.width, canvas.height);
+          }
+
+          if (
+            effects.background === "none" ||
+            !maskCanvas ||
+            !maskWidth ||
+            !maskHeight
+          ) {
+            context.filter = filter;
+            context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+            context.filter = "none";
+          } else {
+            foregroundContext.clearRect(
+              0,
+              0,
+              foregroundCanvas.width,
+              foregroundCanvas.height,
+            );
+            foregroundContext.filter = filter;
+            foregroundContext.drawImage(
+              videoElement,
+              0,
+              0,
+              foregroundCanvas.width,
+              foregroundCanvas.height,
+            );
+            foregroundContext.filter = "none";
+            foregroundContext.globalCompositeOperation = "destination-in";
+            foregroundContext.drawImage(
+              maskCanvas,
+              0,
+              0,
+              foregroundCanvas.width,
+              foregroundCanvas.height,
+            );
+            foregroundContext.globalCompositeOperation = "source-over";
+            context.drawImage(foregroundCanvas, 0, 0);
+          }
+
+          if (effects.faceEmoji !== "none") {
+            context.textAlign = "center";
+            context.textBaseline = "middle";
+            for (const face of faces) {
+              const faceCenterX =
+                ((face.x + face.width / 2) / inferenceCanvas.width) *
+                canvas.width;
+              const faceCenterY =
+                ((face.y + face.height * 0.48) / inferenceCanvas.height) *
+                canvas.height;
+              context.font = `${Math.max(
+                36,
+                (face.width / inferenceCanvas.width) * canvas.width * 0.82,
+              )}px sans-serif`;
+              context.fillText(
+                faceEmojiText[effects.faceEmoji],
+                faceCenterX,
+                faceCenterY,
+              );
+            }
+          }
+
+          if (
+            worker &&
+            !inferencePending &&
+            timestamp - lastInferenceAt >= 180 &&
+            (effects.faceEmoji !== "none" || effects.background !== "none")
+          ) {
+            lastInferenceAt = timestamp;
+            inferenceContext.drawImage(
+              videoElement,
+              0,
+              0,
+              inferenceCanvas.width,
+              inferenceCanvas.height,
+            );
+            inferencePending = true;
+            void createImageBitmap(inferenceCanvas)
+              .then((image) => {
+                if (stopped || !worker) {
+                  image.close();
+                  inferencePending = false;
+                  return;
+                }
+                worker.postMessage(
+                  {
+                    id: timestamp,
+                    image,
+                    timestamp,
+                    detectFaces: effects.faceEmoji !== "none",
+                    segmentBackground: effects.background !== "none",
+                  },
+                  [image],
+                );
+              })
+              .catch((error: unknown) => {
+                inferencePending = false;
+                console.error("Unable to prepare camera frame for effects", error);
+                onError("On-device camera effects could not be loaded.");
+              });
+          }
+        }
+
+        if ("requestVideoFrameCallback" in videoElement) {
+          frameCallback = videoElement.requestVideoFrameCallback(render);
+        } else {
+          fallbackTimer = window.setTimeout(
+            () => render(performance.now()),
+            1000 / 24,
           );
         }
-        frame = requestAnimationFrame(draw);
       };
 
       videoElement.addEventListener(
@@ -174,13 +417,22 @@ function createCameraEffectFilter(effect: Exclude<CameraEffect, "none">) {
             return;
           }
 
-          output = canvas.captureStream(30);
+          const scale = Math.min(1, 1280 / canvas.width, 720 / canvas.height);
+          canvas.width = Math.round(canvas.width * scale);
+          canvas.height = Math.round(canvas.height * scale);
+          foregroundCanvas.width = canvas.width;
+          foregroundCanvas.height = canvas.height;
+          inferenceCanvas.width = Math.min(256, canvas.width);
+          inferenceCanvas.height = Math.round(
+            inferenceCanvas.width * (canvas.height / canvas.width),
+          );
+          output = canvas.captureStream(24);
           const stream = new MediaStream([
             ...output.getVideoTracks(),
             ...input.getAudioTracks(),
           ]);
           resolve(stream);
-          draw();
+          render(performance.now());
         },
         { once: true },
       );
@@ -519,6 +771,7 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
               <CallOverlay
                 call={activeCall}
                 cameraWarning={callNotice}
+                theme={theme}
                 onClose={() => {
                   setActiveCall(null);
                   setCallNotice("");
@@ -720,8 +973,12 @@ function ChannelRail({
           />
         </WithComponents>
       </div>
-      <div className="border-t border-white/[0.06] px-4 py-3 text-[11px] text-slate-600">
-        <span className="block">WinTech Companies</span>    
+      <div className="flex items-center justify-between border-t border-white/[0.06] px-3 py-3 text-[11px] text-slate-600">
+        <span className="block">WinTech Companies</span>
+        <div className={channel?.id ? "hidden" : "flex items-center gap-1"}>
+          <CallSoundToggle />
+          <CallNotificationsToggle />
+        </div>
       </div>
       <NewConversation
         onChannelCreated={setNewlyCreatedChannel}
@@ -1381,6 +1638,7 @@ function WorkspaceHeader({
         </button>
         <span className="mx-1 h-5 w-px bg-white/10" />
         <CallSoundToggle />
+        <CallNotificationsToggle />
         <div className="ml-1 lg:hidden">
           <UserButton />
         </div>
@@ -1793,11 +2051,52 @@ function IncomingCallPrompt({
         call.state.callingState === CallingState.RINGING && !call.isCreatedByMe,
     ) ??
     null;
+  const notifiedCallCid = useRef<string | null>(null);
+  const notifyingCallCid = useRef<string | null>(null);
+  const incomingCallCid = incomingCall?.cid;
+  const callerName = incomingCall?.state.createdBy?.name ?? "A teammate";
 
   useEffect(() => {
-    if (!incomingCall) return;
+    if (!incomingCallCid) return;
     return startCallRingtone();
-  }, [incomingCall]);
+  }, [incomingCallCid]);
+
+  useEffect(() => {
+    if (!incomingCallCid) {
+      notifiedCallCid.current = null;
+      notifyingCallCid.current = null;
+      return;
+    }
+
+    const notifyWhileHidden = () => {
+      if (
+        document.visibilityState !== "hidden" ||
+        notifiedCallCid.current === incomingCallCid ||
+        notifyingCallCid.current === incomingCallCid
+      ) {
+        return;
+      }
+
+      notifyingCallCid.current = incomingCallCid;
+      void showIncomingCallNotification(
+        callerName,
+        incomingCallCid,
+      )
+        .then((shown) => {
+          if (shown) notifiedCallCid.current = incomingCallCid;
+          notifyingCallCid.current = null;
+        })
+        .catch((error: unknown) => {
+          notifyingCallCid.current = null;
+          console.error("Unable to show incoming call notification", error);
+        });
+    };
+
+    notifyWhileHidden();
+    document.addEventListener("visibilitychange", notifyWhileHidden);
+    return () =>
+      document.removeEventListener("visibilitychange", notifyWhileHidden);
+  }, [callerName, incomingCallCid]);
 
   if (!incomingCall) return null;
 
@@ -1880,11 +2179,12 @@ function IncomingCallDialog({
   }
 
   return (
-    <div className="pointer-events-none fixed bottom-5 right-5 z-[60] w-[min(360px,calc(100vw-2.5rem))]">
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/70 p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-md sm:pointer-events-none sm:inset-auto sm:bottom-5 sm:right-5 sm:block sm:w-[min(360px,calc(100vw-2.5rem))] sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
       <section
-        role="status"
+        role="dialog"
+        aria-modal="true"
         aria-labelledby="incoming-call-title"
-        className="pointer-events-auto animate-fade-in rounded-2xl border border-white/10 bg-[#151620]/95 p-5 shadow-2xl shadow-black/40 backdrop-blur-xl"
+        className="pointer-events-auto w-full max-w-sm animate-fade-in rounded-3xl border border-white/10 bg-[#151620]/95 p-5 shadow-2xl shadow-black/40 backdrop-blur-xl sm:max-w-none sm:rounded-2xl"
       >
         <div className="flex items-center gap-3">
           <div className="grid size-11 shrink-0 place-items-center rounded-full bg-emerald-400/15 text-emerald-200 ring-4 ring-emerald-400/[0.06]">
@@ -1907,11 +2207,11 @@ function IncomingCallDialog({
             {error}
           </p>
         )}
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex gap-2">
           <button
             disabled={busy}
             onClick={() => void declineCall()}
-            className="flex items-center gap-2 rounded-lg bg-white/[0.06] px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-rose-500/15 hover:text-rose-200 disabled:opacity-50"
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-white/[0.06] px-3 py-3 text-xs font-medium text-slate-300 transition hover:bg-rose-500/15 hover:text-rose-200 disabled:opacity-50 sm:flex-none sm:py-2"
           >
             <PhoneOff size={15} />
             Decline
@@ -1919,7 +2219,7 @@ function IncomingCallDialog({
           <button
             disabled={busy}
             onClick={() => void acceptCall()}
-            className="flex items-center gap-2 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-400 disabled:opacity-50"
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-500 px-3 py-3 text-xs font-semibold text-white transition hover:bg-emerald-400 disabled:opacity-50 sm:flex-none sm:py-2"
           >
             <Phone size={15} />
             {busy ? "Joining…" : "Join call"}
@@ -2071,10 +2371,12 @@ function DeclinedCallBanner({
 function CallOverlay({
   call,
   cameraWarning,
+  theme,
   onClose,
 }: {
   call: Call;
   cameraWarning: string;
+  theme: ColorTheme;
   onClose: () => void;
 }) {
   return (
@@ -2084,6 +2386,7 @@ function CallOverlay({
           <CallContent
             call={call}
             cameraWarning={cameraWarning}
+            theme={theme}
             onClose={onClose}
           />
         </StreamCall>
@@ -2095,10 +2398,12 @@ function CallOverlay({
 function CallContent({
   call,
   cameraWarning,
+  theme,
   onClose,
 }: {
   call: Call;
   cameraWarning: string;
+  theme: ColorTheme;
   onClose: () => void;
 }) {
   const {
@@ -2173,10 +2478,13 @@ function CallContent({
         <CallStage call={call} />
       </div>
       <div className="flex shrink-0 justify-center border-t border-white/10 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 sm:py-4">
-        <CallControls onLeave={() => {
-          void call.leave();
-          onClose();
-        }} />
+        <CallControls
+          theme={theme}
+          onLeave={() => {
+            void call.leave();
+            onClose();
+          }}
+        />
       </div>
     </>
   );
@@ -2229,7 +2537,13 @@ function CallStage({ call }: { call: Call }) {
   );
 }
 
-function CallControls({ onLeave }: { onLeave: () => void }) {
+function CallControls({
+  onLeave,
+  theme,
+}: {
+  onLeave: () => void;
+  theme: ColorTheme;
+}) {
   const {
     useMicrophoneState,
     useCameraState,
@@ -2238,18 +2552,32 @@ function CallControls({ onLeave }: { onLeave: () => void }) {
   const microphone = useMicrophoneState();
   const camera = useCameraState();
   const screenShare = useScreenShareState();
-  const [effect, setEffect] = useState<CameraEffect>("none");
+  const [filter, setFilter] = useState<CameraFilter>("none");
+  const [faceEmoji, setFaceEmoji] = useState<FaceEmoji>("none");
+  const [background, setBackground] = useState<CameraBackground>("none");
+  const [openMenu, setOpenMenu] = useState<
+    "filters" | "face" | "background" | null
+  >(null);
   const [effectError, setEffectError] = useState("");
   const [screenShareError, setScreenShareError] = useState("");
-
   useEffect(() => {
-    if (effect === "none") return;
+    if (
+      filter === "none" &&
+      faceEmoji === "none" &&
+      background === "none"
+    ) {
+      return;
+    }
+
     const registration = camera.camera.registerFilter(
-      createCameraEffectFilter(effect),
+      createCameraEffectFilter(
+        { filter, faceEmoji, background },
+        (message) => setEffectError(message),
+      ),
     );
     void registration.registered.catch((error: unknown) => {
       console.error("Unable to apply camera effect", error);
-      setEffectError("This camera effect could not be applied.");
+      setEffectError("This camera effect could not be applied to your camera.");
     });
 
     return () => {
@@ -2257,34 +2585,84 @@ function CallControls({ onLeave }: { onLeave: () => void }) {
         console.error("Unable to remove camera effect", error);
       });
     };
-  }, [camera.camera, effect]);
+  }, [background, camera.camera, faceEmoji, filter]);
+
+  const menuSurface =
+    theme === "dark"
+      ? "border-white/10 bg-[#181a25] text-slate-100 shadow-black/50"
+      : "border-slate-200 bg-white text-slate-800 shadow-slate-900/15";
 
   return (
-    <div className="flex flex-col items-center gap-3">
-      <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-slate-300">
-        <SlidersHorizontal size={14} />
-        Camera effect
-        <select
-          aria-label="Camera effect"
-          value={effect}
-          onChange={(event) => {
+    <div className="flex flex-col items-center gap-3" data-theme={theme}>
+      <div className="flex flex-wrap items-end justify-center gap-3">
+        <CameraEffectMenu
+          label="Filters"
+          icon={<SlidersHorizontal size={19} />}
+          open={openMenu === "filters"}
+          onToggle={() =>
+            setOpenMenu(openMenu === "filters" ? null : "filters")
+          }
+          onSelect={(value) => {
+            setFilter(value as CameraFilter);
             setEffectError("");
-            setEffect(event.target.value as CameraEffect);
+            setOpenMenu(null);
           }}
-          className="max-w-40 bg-transparent text-xs text-white outline-none"
-        >
-          <option value="none">None</option>
-          <option value="mono">Black &amp; white</option>
-          <option value="pop">Pop color</option>
-          <option value="vintage">Vintage</option>
-          <option value="warm">Warm</option>
-          <option value="cool">Cool</option>
-          <option value="soft-focus">Soft focus (whole frame)</option>
-          <option value="goofy">Goofy overlay</option>
-          <option value="crying">Crying overlay</option>
-          <option value="water">Water overlay</option>
-        </select>
-      </label>
+          selected={filter}
+          defaultValue="none"
+          options={[
+            { value: "none", label: "Original" },
+            { value: "mono", label: "Black & white", preview: "B&W" },
+            { value: "pop", label: "Pop color", preview: "POP" },
+            { value: "vintage", label: "Vintage", preview: "V" },
+            { value: "warm", label: "Warm", preview: "W" },
+            { value: "cool", label: "Cool", preview: "C" },
+          ]}
+          menuSurface={menuSurface}
+        />
+        <CameraEffectMenu
+          label="Face"
+          icon={<Smile size={19} />}
+          open={openMenu === "face"}
+          onToggle={() => setOpenMenu(openMenu === "face" ? null : "face")}
+          onSelect={(value) => {
+            setFaceEmoji(value as FaceEmoji);
+            setEffectError("");
+            setOpenMenu(null);
+          }}
+          selected={faceEmoji}
+          defaultValue="none"
+          options={[
+            { value: "none", label: "No emoji" },
+            { value: "goofy", label: "Goofy", preview: "🤪" },
+            { value: "crying", label: "Crying", preview: "😭" },
+            { value: "water", label: "Water", preview: "💦" },
+          ]}
+          menuSurface={menuSurface}
+        />
+        <CameraEffectMenu
+          label="Background"
+          icon={<ImageIcon size={19} />}
+          open={openMenu === "background"}
+          onToggle={() =>
+            setOpenMenu(openMenu === "background" ? null : "background")
+          }
+          onSelect={(value) => {
+            setBackground(value as CameraBackground);
+            setEffectError("");
+            setOpenMenu(null);
+          }}
+          selected={background}
+          defaultValue="none"
+          options={[
+            { value: "none", label: "Original" },
+            { value: "blur", label: "Blur background", preview: "◌" },
+            { value: "mint", label: "Mint studio", preview: "M" },
+            { value: "sunset", label: "Sunset studio", preview: "S" },
+            { value: "ocean", label: "Ocean studio", preview: "O" },
+          ]}
+          menuSurface={menuSurface}
+        />
+      </div>
       <div className="flex items-center gap-3">
         <ControlButton
           label={microphone.isMute ? "Unmute microphone" : "Mute microphone"}
@@ -2329,9 +2707,85 @@ function CallControls({ onLeave }: { onLeave: () => void }) {
         </p>
       )}
       <p className="max-w-md text-center text-[10px] leading-4 text-slate-500">
-        Effects are sent with your video. Soft focus affects the full frame;
-        background replacement and face tracking are not included.
+        Face and background effects are processed on your device.
       </p>
+    </div>
+  );
+}
+
+function CameraEffectMenu<T extends string>({
+  label,
+  icon,
+  open,
+  onToggle,
+  onSelect,
+  selected,
+  defaultValue,
+  options,
+  menuSurface,
+}: {
+  label: string;
+  icon: ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  onSelect: (value: T) => void;
+  selected: T;
+  defaultValue: T;
+  options: Array<{ value: T; label: string; preview?: string }>;
+  menuSurface: string;
+}) {
+  return (
+    <div className="relative flex flex-col items-center gap-1">
+      {open && (
+        <div
+          role="group"
+          aria-label={`${label} options`}
+          className={`absolute bottom-full left-1/2 z-20 mb-3 w-56 -translate-x-1/2 rounded-2xl border p-2 shadow-xl backdrop-blur-xl ${menuSurface}`}
+        >
+          <p className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] opacity-60">
+            {label}
+          </p>
+          <div className="grid gap-1">
+            {options.map((option) => (
+              <button
+                type="button"
+                key={option.value}
+                aria-pressed={selected === option.value}
+                onClick={() => onSelect(option.value)}
+                className={`flex min-h-10 items-center gap-3 rounded-xl px-2.5 text-left text-xs transition ${
+                  selected === option.value
+                    ? "bg-emerald-500/15 font-semibold text-emerald-600 dark:text-emerald-300"
+                    : "hover:bg-slate-500/10"
+                }`}
+              >
+                <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-slate-500/10 text-sm">
+                  {option.preview ?? (option.value === defaultValue ? "✓" : "•")}
+                </span>
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <button
+        type="button"
+        aria-label={`${label} menu`}
+        aria-expanded={open}
+        title={`${label}${selected !== defaultValue ? `: ${selected}` : ""}`}
+        onClick={onToggle}
+        className={`grid size-11 place-items-center rounded-full border transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-500 ${
+          open
+            ? "border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
+            : selected !== defaultValue
+              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+              : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200 dark:hover:bg-white/10"
+        }`}
+      >
+        {icon}
+      </button>
+      <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+        {label}
+      </span>
     </div>
   );
 }

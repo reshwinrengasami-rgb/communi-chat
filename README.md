@@ -24,6 +24,9 @@ Communichat is a dark-first real-time messaging dashboard built with the Next.js
 | `NEXT_PUBLIC_STREAM_API_KEY` | Stream application dashboard |
 | `STREAM_API_SECRET` | Stream application dashboard; server-side only |
 | `MONGODB_URI` | MongoDB connection string |
+| `NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY` | Web Push VAPID public key |
+| `WEB_PUSH_VAPID_PRIVATE_KEY` | Matching Web Push private key; server-side only |
+| `WEB_PUSH_VAPID_SUBJECT` | Public HTTPS URL for your app, such as `https://your-domain.example` |
 
 The authenticated `/api/stream/token` route provisions the signed-in user in Stream and upserts their MongoDB profile/settings. When someone opens Communichat, the authenticated profile-sync request also refreshes the latest Clerk names and photos for members of their recent chats in Stream. This avoids requiring a Clerk webhook; profile changes sync the next time a chat member opens Communichat.
 
@@ -36,13 +39,22 @@ The authenticated `/api/stream/token` route provisions the signed-in user in Str
 - GIF search and sending through Stream's built-in `/giphy` command, with no separate Giphy API key
 - Stream Video calling overlay with microphone, camera, screen-share, and leave controls
 - Ringing call invitations that recipients can accept or decline, with incoming video requested at up to 720p when network conditions allow
+- A public landing page and responsive call prompts, including a full-screen incoming-call prompt on mobile
+- Browser push notifications for incoming calls and an optional in-page ringtone
 - Recipients who open Communichat while a call is still active can find and join that call
-- Optional in-page sound for incoming calls while Communichat is open
 - Responsive dashboard layout and dark theme
 
 Create a direct message or group channel from the **+** button in the conversation rail. Use the **GIF** button next to the composer to search and send a GIF (leave the search empty for a random GIF); Stream's Giphy command must be enabled for the channel type in the Stream dashboard. Call buttons invite members of the selected conversation; recipients can join or decline from the incoming call prompt. Each invite creates a new Stream call and sends the ring event with the call request. Video resolution is adaptive, so network conditions and camera hardware may result in a lower resolution. Stream's channel permissions and upload settings are managed in the Stream dashboard. For a production deployment, configure Clerk's allowed origins and Stream's production permissions.
 
-Incoming-call sound is optional and plays only while Communichat is open. Enable it with the speaker button in a conversation header; browsers require this interaction before they allow audio playback.
+### Browser push setup
+
+1. Generate a VAPID key pair once with `npx web-push generate-vapid-keys`. Keep the private key secret and do not regenerate it after users subscribe.
+2. Set `NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`, and `WEB_PUSH_VAPID_SUBJECT` in `.env.local` and in your hosting provider's environment settings. The subject can be your public HTTPS site URL; the private key must not use a `NEXT_PUBLIC_` prefix.
+3. Deploy the site over HTTPS. In the Stream dashboard, add a Video webhook to `https://your-domain.example/api/webhooks/stream` and subscribe it to the `call.ring` event. The handler verifies Stream's `X-Signature` with `STREAM_API_SECRET` before sending notifications.
+4. Sign in on each browser/device and enable the bell in a conversation header. Allow browser notifications. The app creates and saves a Web Push subscription; a test notification confirms the permission and worker.
+5. Test a call with the recipient's browser open in the background. The deployed webhook must be publicly reachable; localhost is not reachable by Stream.
+
+The push-subscription API requires the VAPID key pair and stores each signed-in user's browser endpoints in MongoDB. Expired push endpoints are removed automatically. Incoming-call sound uses the default CommuniChat chime until a custom audio file is uploaded from the sound menu. Sound preferences and uploaded files are saved in that browser; audio files must be smaller than 2 MB. Browser notifications use the operating system/browser's notification sound. Push delivery while the browser is closed depends on browser and operating-system support; a fully stopped browser may not receive pushes. The Android WebView app needs a native push integration separately.
 
 ## Project layout
 
@@ -53,7 +65,8 @@ app/
   sign-up/                Clerk sign-up page
   globals.css             Tailwind base and Stream theme
   layout.tsx              Root Clerk provider and metadata
-  page.tsx                Authenticated workspace entry
+  landing-page.tsx        Public marketing page
+  page.tsx                Public landing page and authenticated workspace entry
 components/
   chat-dashboard.tsx      Chat, conversation rail, and video-call UI
 lib/

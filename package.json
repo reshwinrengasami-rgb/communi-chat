@@ -12,6 +12,7 @@
   "dependencies": {
     "@clerk/nextjs": "^6.12.0",
     "@emoji-mart/data": "^1.2.1",
+    "@mediapipe/tasks-vision": "0.10.35",
     "@stream-io/video-react-sdk": "^1.20.0",
     "clsx": "^2.1.1",
     "emoji-mart": "^5.6.0",
@@ -22,12 +23,14 @@
     "react-dom": "^19.0.0",
     "stream-chat": "^9.54.0",
     "stream-chat-react": "^14.14.1",
-    "tailwind-merge": "^2.6.0"
+    "tailwind-merge": "^2.6.0",
+    "web-push": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.6",
     "@types/react-dom": "^19.0.3",
+    "@types/web-push": "^3.6.4",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.4.3",

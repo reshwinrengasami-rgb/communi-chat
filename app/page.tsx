@@ -1,15 +1,15 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { ChatDashboard } from "@/components/chat-dashboard";
+import { LandingPage } from "@/app/landing-page";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  if (!userId) return <LandingPage />;
 
   const clerkUser = await currentUser();
-  if (!clerkUser) redirect("/sign-in");
+  if (!clerkUser) return <LandingPage />;
 
   const email =
     clerkUser.primaryEmailAddress?.emailAddress ??

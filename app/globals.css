@@ -30,6 +30,63 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+.landing-page {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse at 74% 14%, rgba(16, 185, 129, 0.1), transparent 35%),
+    radial-gradient(ellipse at 8% 36%, rgba(59, 130, 246, 0.055), transparent 32%),
+    #0d0e14;
+}
+
+.landing-grid::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 56px 56px;
+  content: "";
+  mask-image: linear-gradient(to bottom, black, transparent 82%);
+  pointer-events: none;
+}
+
+.landing-gradient {
+  background: linear-gradient(100deg, #a7f3d0 4%, #34d399 45%, #6ee7b7 95%);
+  background-clip: text;
+  color: transparent;
+}
+
+.landing-orb {
+  background: radial-gradient(
+    circle at center,
+    rgba(16, 185, 129, 0.2),
+    rgba(16, 185, 129, 0.035) 48%,
+    transparent 72%
+  );
+}
+
+.landing-call-card {
+  animation: landing-call-glow 3s ease-in-out infinite;
+}
+
+@keyframes landing-call-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(52, 211, 153, 0);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(52, 211, 153, 0.1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-call-card {
+    animation: none;
+  }
+}
+
 .communichat-shell {
   background:
     radial-gradient(ellipse at 68% -12%, rgba(16, 185, 129, 0.08), transparent 38%),
