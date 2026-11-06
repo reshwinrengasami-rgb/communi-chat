@@ -40,11 +40,13 @@ import {
   Channel,
   ChannelList as StreamChannelList,
   Chat,
+  ChannelListItemUI,
   MessageComposer,
   MessageList,
   Thread,
   WithComponents,
   Window,
+  type ChannelListItemUIProps,
   useChatContext,
 } from "stream-chat-react";
 import { EmojiPicker } from "stream-chat-react/emojis";
@@ -475,6 +477,31 @@ function isGroupChannel(channel?: StreamChannel) {
         channel.data?.name ||
         (channel.data?.member_count ?? Object.keys(channel.state.members).length) >
           2),
+  );
+}
+
+function getChannelDisplayName(channel: StreamChannel | undefined, userId?: string) {
+  if (!channel) return "Choose a conversation";
+
+  const channelName =
+    typeof channel.data?.name === "string" ? channel.data.name.trim() : "";
+  if (channelName) return channelName;
+  if (isGroupChannel(channel)) return "Group chat";
+
+  const memberNames = Object.values(channel.state.members)
+    .filter((member) => member.user?.id !== userId)
+    .map((member) => member.user?.name?.trim())
+    .filter((name): name is string => Boolean(name));
+  return memberNames.join(", ") || "Direct message";
+}
+
+function CommuniChatChannelListItem(props: ChannelListItemUIProps) {
+  const { client } = useChatContext();
+  return (
+    <ChannelListItemUI
+      {...props}
+      displayTitle={getChannelDisplayName(props.channel, client.userID)}
+    />
   );
 }
 
@@ -939,7 +966,10 @@ function ChannelRail({
       </div>
       <div className="flex min-h-0 min-w-0 w-full flex-1 overflow-hidden px-2">
         <WithComponents
-          overrides={{ LoadingErrorIndicator: ChannelListLoadError }}
+          overrides={{
+            LoadingErrorIndicator: ChannelListLoadError,
+            ChannelListItemUI: CommuniChatChannelListItem,
+          }}
         >
           <StreamChannelList
             filters={{
@@ -1430,7 +1460,7 @@ function WorkspaceHeader({
     ? {
         label: !presenceAvailable
           ? "Presence unavailable"
-          : channel.data?.name
+          : isGroup
             ? `${onlineCount} online`
             : onlineCount > 0
               ? "Online"
@@ -1439,15 +1469,7 @@ function WorkspaceHeader({
       }
     : null;
 
-  const channelName =
-    channel?.data?.name ||
-    (channel?.state.members &&
-      Object.values(channel.state.members)
-        .filter((member) => member.user?.id !== client.userID)
-        .map((member) => member.user?.name)
-        .filter(Boolean)
-        .join(", ")) ||
-    "Choose a conversation";
+  const channelName = getChannelDisplayName(channel, client.userID);
   const hasGroupAccess = groupAccess?.channelId === channel?.id;
   const creatorId = hasGroupAccess
     ? groupAccess?.creatorId ?? undefined
@@ -1508,7 +1530,7 @@ function WorkspaceHeader({
     let activeCall: Call | null = null;
     try {
       const call = videoClient.call(
-        videoEnabled ? "default" : "audio_call",
+        "default",
         crypto.randomUUID(),
       );
       activeCall = call;
@@ -1527,7 +1549,11 @@ function WorkspaceHeader({
       if (activeCall) await activeCall.leave().catch((leaveError: unknown) => {
         console.error("Unable to clean up failed call", leaveError);
       });
-      setCallError("Could not start the call. Check your Stream Video setup.");
+      setCallError(
+        error instanceof Error
+          ? `Call failed: ${error.message}`
+          : "Could not start the call. Check your Stream Video setup.",
+      );
     } finally {
       setStartingCall(false);
     }
@@ -1554,7 +1580,11 @@ function WorkspaceHeader({
           <h1 className="truncate text-sm font-semibold">{channelName}</h1>
         </div>
         {callError ? (
-          <p role="alert" className="mt-1.5 truncate pl-6 text-[11px] text-rose-300">
+          <p
+            role="alert"
+            className="mt-1.5 max-w-[min(60vw,32rem)] break-words pl-6 text-[11px] text-rose-300"
+            title={callError}
+          >
             {callError}
           </p>
         ) : (

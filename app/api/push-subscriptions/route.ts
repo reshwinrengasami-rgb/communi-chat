@@ -42,14 +42,12 @@ function isValidKey(value: unknown, maximumLength: number): value is string {
 
 export async function GET() {
   try {
-    configureWebPush();
     return NextResponse.json({ publicKey: getWebPushPublicKey() });
   } catch (error) {
-    console.error("Web Push is not configured", error);
+    console.error("Web Push public key is not configured", error);
     return NextResponse.json(
       {
-        error:
-          "Browser push requires the VAPID public key, private key, and HTTPS subject on the server.",
+        error: "Browser push requires the VAPID public key on the server.",
       },
       { status: 503 },
     );
