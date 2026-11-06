@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { SignInButton, SignUpButton } from "@clerk/nextjs";
 import {
   ArrowRight,
@@ -34,9 +35,14 @@ export function LandingPage() {
     <main className="landing-page min-h-screen overflow-hidden">
       <header className="relative z-10 mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-5 sm:px-8 sm:py-7">
         <Link href="/" className="flex items-center gap-3" aria-label="CommuniChat home">
-          <span className="grid size-10 place-items-center rounded-2xl bg-emerald-400 text-[#07120e] shadow-[0_8px_30px_rgba(52,211,153,0.22)]">
-            <MessageCircle size={20} strokeWidth={2.5} />
-          </span>
+          <Image
+            src="/communichat-logo.png"
+            alt=""
+            width={44}
+            height={44}
+            className="size-10 rounded-2xl object-cover shadow-[0_8px_30px_rgba(52,211,153,0.22)]"
+            priority
+          />
           <span className="text-[17px] font-semibold tracking-tight text-white">
             CommuniChat
           </span>

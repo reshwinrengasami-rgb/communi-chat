@@ -6,6 +6,10 @@ export const metadata: Metadata = {
   title: "CommuniChat — Conversations that move work forward",
   description:
     "Message your people, start a call, and join while it is still live with Communichat.",
+  icons: {
+    icon: "/communichat-logo.png",
+    apple: "/communichat-logo.png",
+  },
 };
 
 export const viewport: Viewport = {

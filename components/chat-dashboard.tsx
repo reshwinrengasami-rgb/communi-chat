@@ -30,6 +30,7 @@ import {
   X,
 } from "lucide-react";
 import { UserButton, useUser } from "@clerk/nextjs";
+import Image from "next/image";
 import {
   CallNotificationsToggle,
   CallSoundToggle,
@@ -943,9 +944,14 @@ function ChatEmojiPicker({ theme }: { theme: ColorTheme }) {
 function AppSidebar() {
   return (
     <aside className="hidden w-[72px] shrink-0 flex-col items-center border-r border-white/[0.07] bg-[#0d0e14] py-5 lg:flex">
-      <div className="grid size-10 place-items-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-glow">
-        <MessageCircle size={19} className="text-white" />
-      </div>
+      <Image
+        src="/communichat-logo.png"
+        alt="CommuniChat"
+        width={44}
+        height={44}
+        className="size-10 rounded-2xl object-cover shadow-glow"
+        priority
+      />
       <div className="mt-9 flex flex-col gap-3">
         <SidebarButton label="Messages" active>
           <MessageCircle size={19} />
@@ -1005,9 +1011,13 @@ function ChannelRail({
       <div className="flex h-[76px] items-center justify-between border-b border-white/[0.07] px-5">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-            <span className="grid size-7 place-items-center rounded-lg bg-emerald-400/15 text-emerald-200 sm:hidden">
-              <MessageCircle size={14} />
-            </span>
+            <Image
+              src="/communichat-logo.png"
+              alt=""
+              width={28}
+              height={28}
+              className="size-7 rounded-lg object-cover sm:hidden"
+            />
             Communichat
           </div>
         </div>
