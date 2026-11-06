@@ -63,17 +63,12 @@ export function LandingPage() {
 
       <section className="landing-grid relative mx-auto w-full max-w-7xl px-5 pb-20 pt-10 sm:px-8 sm:pb-28 sm:pt-16 lg:pt-20">
         <div className="relative z-10">
-          <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-emerald-300/15 bg-emerald-300/[0.06] px-3.5 py-2 text-xs font-medium text-emerald-200">
-            <span className="size-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,0.85)]" />
-            Your people, one good conversation away
-          </div>
           <h1 className="max-w-3xl text-[clamp(3.2rem,7.5vw,6.6rem)] font-semibold leading-[0.98] tracking-[-0.075em] text-white">
-            Make room for
-            <span className="landing-gradient block">better conversations.</span>
+            Chatting, 
+            <span className="landing-gradient block">Simplified.</span>
           </h1>
           <p className="mt-7 max-w-xl text-base leading-7 text-slate-400 sm:text-lg sm:leading-8">
-            A quieter place to message your team, share the little things, and
-            jump into a call when words deserve a face.
+            A modern chat app to chat with people and join calls. Communicate with anyone, FREE!
           </p>
           <div className="mt-9 flex flex-col gap-3 sm:flex-row">
             <SignUpButton mode="redirect" forceRedirectUrl="/">
@@ -81,7 +76,7 @@ export function LandingPage() {
                 type="button"
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-emerald-300 px-6 text-sm font-semibold text-[#07120e] shadow-[0_10px_35px_rgba(52,211,153,0.16)] transition hover:-translate-y-0.5 hover:bg-emerald-200"
               >
-                Start a conversation <ArrowRight size={16} />
+                Join CommuniChat <ArrowRight size={16} />
               </button>
             </SignUpButton>
             <SignInButton mode="redirect" forceRedirectUrl="/">
@@ -89,19 +84,19 @@ export function LandingPage() {
                 type="button"
                 className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.025] px-6 text-sm font-medium text-slate-200 transition hover:border-white/20 hover:bg-white/[0.05]"
               >
-                I already have an account
+                Sign In
               </button>
             </SignInButton>
           </div>
           <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
             <span className="inline-flex items-center gap-1.5">
-              <Check size={14} className="text-emerald-300" /> Messages and calls
+              <Check size={14} className="text-emerald-300" /> Has messages and calls
             </span>
             <span className="inline-flex items-center gap-1.5">
               <Check size={14} className="text-emerald-300" /> Works on mobile
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <Check size={14} className="text-emerald-300" /> Join a live call
+              <Check size={14} className="text-emerald-300" /> No ads and free to use
             </span>
           </div>
         </div>
