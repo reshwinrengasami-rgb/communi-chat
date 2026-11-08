@@ -97,7 +97,7 @@ type CameraFilter =
   | "vintage"
   | "warm"
   | "cool";
-type FaceEmoji = "none" | "goofy" | "crying" | "water";
+type FaceEmoji = "none" | "goofy" | "crying" | "scared";
 type CameraBackground = "none" | "blur" | "mint" | "sunset" | "ocean";
 type CameraEffects = {
   filter: CameraFilter;
@@ -118,8 +118,10 @@ const cameraFilterCss: Record<Exclude<CameraFilter, "none">, string> = {
 const faceEmojiText: Record<Exclude<FaceEmoji, "none">, string> = {
   goofy: "🤪",
   crying: "😭",
-  water: "💦",
+  scared: "😱",
 };
+
+
 
 function createCameraEffectFilter(
   effects: CameraEffects,
@@ -589,6 +591,7 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
   );
   const [bootstrap, setBootstrap] = useState<StreamBootstrap | null>(null);
   const [chatClient, setChatClient] = useState<StreamChat | null>(null);
+  const [fcmToken, setFcmToken] = useState<string | null>(null);
   const [videoClient, setVideoClient] = useState<StreamVideoClient | null>(null);
   const [recoveredIncomingCall, setRecoveredIncomingCall] =
     useState<Call | null>(null);
@@ -718,6 +721,60 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
     });
     return () => subscription.unsubscribe();
   }, [chatClient]);
+
+  // Receive the FCM token supplied by the Android WebView bridge.
+  useEffect(() => {
+    const handleFcmToken = (event: Event) => {
+      const token = (event as CustomEvent<string>).detail;
+      if (typeof token === "string" && token.length > 0) {
+        console.log("Received Android FCM token");
+        setFcmToken(token);
+      }
+    };
+
+    window.addEventListener("androidFcmToken", handleFcmToken);
+
+    const bridge = (
+      window as Window & {
+        AndroidBridge?: { onReactReady: () => void };
+      }
+    ).AndroidBridge;
+    bridge?.onReactReady();
+
+    return () => {
+      window.removeEventListener("androidFcmToken", handleFcmToken);
+    };
+  }, []);
+
+  // Register or refresh this Android installation with Stream once both
+  // the authenticated Chat client and the FCM token are available.
+  useEffect(() => {
+    if (!chatClient || !fcmToken || !chatClient.userID) return;
+    const client = chatClient;
+    const token = fcmToken;
+    let cancelled = false;
+
+    async function registerAndroidDevice() {
+      try {
+        await client.createDevice({
+          id: token,
+          push_provider: "firebase",
+        });
+        if (!cancelled) {
+          console.log("Android device registered with Stream Chat");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Stream device registration failed:", error);
+        }
+      }
+    }
+
+    void registerAndroidDevice();
+    return () => {
+      cancelled = true;
+    };
+  }, [chatClient, fcmToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1633,13 +1690,23 @@ function WorkspaceHeader({
         crypto.randomUUID(),
       );
       activeCall = call;
+      // await call.getOrCreate({
+      //   ring: true,
+      //   video: videoEnabled,
+      //   data: {
+      //     members: Object.keys(channel.state.members).map((id) => ({ user_id: id })),
+      //   },
+      // });
       await call.getOrCreate({
-        ring: true,
-        video: videoEnabled,
-        data: {
-          members: Object.keys(channel.state.members).map((id) => ({ user_id: id })),
-        },
-      });
+  ring: true,
+  notify: true,
+  video: videoEnabled,
+  data: {
+    members: Object.keys(channel.state.members).map((id) => ({
+      user_id: id,
+    })),
+  },
+});
       await call.join();
       if (videoEnabled) await call.camera.enable();
       onStartCall(call);
@@ -2757,7 +2824,7 @@ function CallControls({
             { value: "none", label: "No emoji" },
             { value: "goofy", label: "Goofy", preview: "🤪" },
             { value: "crying", label: "Crying", preview: "😭" },
-            { value: "water", label: "Water", preview: "💦" },
+            { value: "scared", label: "scared", preview: "💦" },
           ]}
           menuSurface={menuSurface}
         />
