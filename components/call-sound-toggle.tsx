@@ -23,7 +23,7 @@ const callSoundChangeEvent = "communichat:call-sound-change";
 const callSoundEnabledStorageKey = "communichat:call-sound-enabled";
 const customCallSoundStorageKey = "communichat:custom-call-sound";
 const customCallSoundNameStorageKey = "communichat:custom-call-sound-name";
-const maximumCallSoundSize = 2 * 1024 * 1024;
+const maximumCallSoundSize = 50 * 1024;
 const callNotificationsStorageKey = "communichat:call-notifications-enabled";
 const callNotificationsChangeEvent = "communichat:call-notifications-change";
 
@@ -354,7 +354,7 @@ export function CallSoundToggle() {
       return;
     }
     if (file.size > maximumCallSoundSize) {
-      setError("Choose an audio file smaller than 2 MB.");
+      setError("Choose an audio file smaller than 50 KB.");
       return;
     }
 
