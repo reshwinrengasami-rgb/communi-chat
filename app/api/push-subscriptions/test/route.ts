@@ -4,6 +4,7 @@ import type { PushSubscription as WebPushSubscription } from "web-push";
 import { connectToDatabase } from "@/lib/mongodb";
 import { configureWebPush, sendNotification } from "@/lib/web-push";
 import PushSubscription from "@/models/PushSubscription";
+import { sendFirebasePush } from "@/lib/firebase-admin";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,15 @@ export async function POST() {
   }
 
   try {
+    const firebaseResult = await sendFirebasePush([userId], {
+      type: "message",
+      title: "CommuniChat test notification",
+      body: "Push notifications are reaching this device.",
+    }).catch((error: unknown) => {
+      console.error("Firebase test delivery failed", error);
+      return { sent: 0, failed: 1 };
+    });
+    if (firebaseResult.sent > 0) return NextResponse.json(firebaseResult);
     configureWebPush();
     await connectToDatabase();
     const subscriptions = await PushSubscription.find({ userId }).lean();

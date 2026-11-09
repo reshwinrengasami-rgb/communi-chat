@@ -6,14 +6,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-self.addEventListener("push", (event) => {
-  let payload = {};
-  try {
-    payload = event.data ? event.data.json() : {};
-  } catch (error) {
-    console.error("Invalid push notification payload", error);
-  }
-
+function showCommuniChatNotification(payload) {
   const title =
     typeof payload.title === "string" ? payload.title : "Incoming call";
   const body =
@@ -26,8 +19,7 @@ self.addEventListener("push", (event) => {
   const messageId = typeof payload.messageId === "string" ? payload.messageId : "";
   const isCall = payload.type === "call";
 
-  event.waitUntil(
-    self.registration.showNotification(title, {
+  return self.registration.showNotification(title, {
       body,
       tag: isCall
         ? `communichat-call-${callCid}`
@@ -38,8 +30,20 @@ self.addEventListener("push", (event) => {
       requireInteraction: isCall,
       silent: false,
       vibrate: isCall ? [300, 120, 300, 120, 500] : [180, 80, 180],
-    }),
-  );
+    });
+}
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (error) {
+    console.error("Invalid push notification payload", error);
+  }
+  // Firebase's own listener handles FCM envelopes.
+  if (payload.from && payload.data) return;
+  event.stopImmediatePropagation();
+  event.waitUntil(showCommuniChatNotification(payload));
 });
 
 self.addEventListener("notificationclick", (event) => {
@@ -53,9 +57,9 @@ self.addEventListener("notificationclick", (event) => {
 
         if (appWindow) {
           const targetUrl = new URL("/", self.location.origin);
-          if (typeof event.notification.data?.callCid === "string") {
+          if (event.notification.data?.callCid) {
             targetUrl.searchParams.set("call", event.notification.data.callCid);
-          } else if (typeof event.notification.data?.channelCid === "string") {
+          } else if (event.notification.data?.channelCid) {
             targetUrl.searchParams.set(
               "channel",
               event.notification.data.channelCid,
@@ -65,9 +69,9 @@ self.addEventListener("notificationclick", (event) => {
         }
 
         const targetUrl = new URL("/", self.location.origin);
-        if (typeof event.notification.data?.callCid === "string") {
+        if (event.notification.data?.callCid) {
           targetUrl.searchParams.set("call", event.notification.data.callCid);
-        } else if (typeof event.notification.data?.channelCid === "string") {
+        } else if (event.notification.data?.channelCid) {
           targetUrl.searchParams.set(
             "channel",
             event.notification.data.channelCid,
@@ -78,3 +82,13 @@ self.addEventListener("notificationclick", (event) => {
     ),
   );
 });
+
+const firebaseConfig = new URL(self.location.href).searchParams.get("firebase");
+if (firebaseConfig) {
+  importScripts("https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js");
+  importScripts("https://www.gstatic.com/firebasejs/12.19.0/firebase-messaging-compat.js");
+  firebase.initializeApp(JSON.parse(firebaseConfig));
+  firebase.messaging().onBackgroundMessage((payload) =>
+    showCommuniChatNotification(payload.data || {}),
+  );
+}

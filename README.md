@@ -27,6 +27,9 @@ Communichat is a dark-first real-time messaging dashboard built with the Next.js
 | `NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY` | Web Push VAPID public key |
 | `WEB_PUSH_VAPID_PRIVATE_KEY` | Matching Web Push private key; server-side only |
 | `WEB_PUSH_VAPID_SUBJECT` | Public HTTPS URL for your app, such as `https://your-domain.example` |
+| `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID` | Firebase console web app configuration |
+| `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | Firebase Cloud Messaging web push public key |
+| `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` | Firebase service account credentials, server-side only |
 
 The authenticated `/api/stream/token` route provisions the signed-in user in Stream and upserts their MongoDB profile/settings. When someone opens Communichat, the authenticated profile-sync request also refreshes the latest Clerk names and photos for members of their recent chats in Stream. This avoids requiring a Clerk webhook; profile changes sync the next time a chat member opens Communichat.
 
@@ -46,7 +49,37 @@ The authenticated `/api/stream/token` route provisions the signed-in user in Str
 
 Create a direct message or group channel from the **+** button in the conversation rail. Use the **GIF** button next to the composer to search and send a GIF (leave the search empty for a random GIF); Stream's Giphy command must be enabled for the channel type in the Stream dashboard. Call buttons invite members of the selected conversation; recipients can join or decline from the incoming call prompt. Each invite creates a new Stream call and sends the ring event with the call request. Video resolution is adaptive, so network conditions and camera hardware may result in a lower resolution. Stream's channel permissions and upload settings are managed in the Stream dashboard. For a production deployment, configure Clerk's allowed origins and Stream's production permissions.
 
+On Android, accepting an incoming call from its notification opens CommuniChat
+and joins the call automatically. Opening the notification without accepting
+still shows the incoming-call prompt. The website must be deployed with this
+change before the Android notification's Accept action can join automatically.
+Android may still ask for microphone or camera permission.
+
 ### Browser push setup
+
+For Firebase Cloud Messaging, create a **web app** in your Firebase project and
+enable Cloud Messaging. Set the five `NEXT_PUBLIC_FIREBASE_*` values from the
+web app configuration and Cloud Messaging web push certificate, and set the
+three server-only `FIREBASE_*` service account values in your hosting provider.
+The private key must stay secret; escaped `\n` sequences are supported.
+Configure the Stream webhook in step 3 below and deploy the site. Sign in,
+enable the bell, allow notifications, then use the test button. If the bell was
+already enabled using Web Push, turn it off and on to switch to FCM. Browsers
+unsupported by Firebase continue to use Web Push; keep its VAPID settings for
+those browsers and existing subscriptions. FCM background delivery depends on
+the browser and operating system; a force-stopped browser may not receive pushes.
+
+Android uses its own Stream Firebase push provider rather than browser FCM.
+Configure `firebase-android` with the Firebase service account in the Stream
+dashboard, enable message push for the channel type, configure high-priority
+message delivery on the sending side, and permit app notifications on the
+phone. Deploy the website as well as installing the APK: the website closes
+the Android WebView's chat connection when the app is backgrounded and
+restores it on return, allowing Stream to consider it offline for push.
+Stream push eligibility, other active sessions, and device battery restrictions
+also affect delivery. Sending a test from one signed-in device to another and
+checking Android logs and the Stream dashboard are necessary to confirm actual
+delivery.
 
 1. Generate a VAPID key pair once with `npx web-push generate-vapid-keys`. Keep the private key secret and do not regenerate it after users subscribe.
 2. Set `NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`, and `WEB_PUSH_VAPID_SUBJECT` in `.env.local` and in your hosting provider's environment settings. The subject can be your public HTTPS site URL; the private key must not use a `NEXT_PUBLIC_` prefix.

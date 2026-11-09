@@ -26,6 +26,52 @@ const customCallSoundNameStorageKey = "communichat:custom-call-sound-name";
 const maximumCallSoundSize = 50 * 1024;
 const callNotificationsStorageKey = "communichat:call-notifications-enabled";
 const callNotificationsChangeEvent = "communichat:call-notifications-change";
+const firebasePushStorageKey = "communichat:firebase-push";
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+};
+const firebaseVapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
+
+async function firebaseMessaging() {
+  const { getApps, initializeApp } = await import("firebase/app");
+  const { getMessaging, isSupported } = await import("firebase/messaging");
+  if (!(await isSupported())) throw new Error("Firebase notifications are not supported in this browser.");
+  const app = getApps().find((item) => item.name === "communichat-push") ??
+    initializeApp(firebaseConfig, "communichat-push");
+  return getMessaging(app);
+}
+
+async function saveFirebaseToken(token: string, method: "POST" | "DELETE") {
+  const response = await fetch("/api/firebase-push", {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  if (!response.ok) throw new Error(await responseError(response, "Could not update Firebase notifications."));
+}
+
+async function registerFirebasePush() {
+  if (!firebaseVapidKey || Object.values(firebaseConfig).some((value) => !value)) {
+    throw new Error("Firebase browser notifications are not configured.");
+  }
+  const registration = await navigator.serviceWorker.register(
+    `/call-notifications-sw.js?firebase=${encodeURIComponent(JSON.stringify(firebaseConfig))}`,
+    { scope: "/" },
+  );
+  await navigator.serviceWorker.ready;
+  const messaging = await firebaseMessaging();
+  const { getToken } = await import("firebase/messaging");
+  const token = await getToken(messaging, { vapidKey: firebaseVapidKey, serviceWorkerRegistration: registration });
+  if (!token) throw new Error("Firebase did not provide a notification token.");
+  const oldToken = window.localStorage.getItem(firebasePushStorageKey);
+  await saveFirebaseToken(token, "POST");
+  if (oldToken && oldToken !== token) await saveFirebaseToken(oldToken, "DELETE");
+  window.localStorage.setItem(firebasePushStorageKey, token);
+  return registration;
+}
 
 function subscribeToCallSound(onChange: () => void) {
   const handleStorage = () => {
@@ -505,6 +551,10 @@ export function CallNotificationsToggle() {
       }
 
       try {
+        if (window.localStorage.getItem(firebasePushStorageKey)) {
+          await registerFirebasePush();
+          return;
+        }
         const registration = await navigator.serviceWorker.getRegistration("/");
         const subscription = await registration?.pushManager.getSubscription();
         if (active && !subscription) {
@@ -529,6 +579,17 @@ export function CallNotificationsToggle() {
     setError("");
     if (enabled) {
       try {
+        const firebaseToken = window.localStorage.getItem(firebasePushStorageKey);
+        if (firebaseToken) {
+          await saveFirebaseToken(firebaseToken, "DELETE");
+          const messaging = await firebaseMessaging();
+          const { deleteToken } = await import("firebase/messaging");
+          await deleteToken(messaging);
+          window.localStorage.removeItem(firebasePushStorageKey);
+          window.localStorage.removeItem(callNotificationsStorageKey);
+          notifyCallNotificationPreferenceChanged();
+          return;
+        }
         const registration = await navigator.serviceWorker.getRegistration("/");
         const subscription = await registration?.pushManager.getSubscription();
         if (subscription) {
@@ -581,6 +642,28 @@ export function CallNotificationsToggle() {
 
       if (!("serviceWorker" in navigator)) {
         throw new Error("This browser cannot register notification handlers.");
+      }
+      const { isSupported: firebaseSupported } = await import("firebase/messaging");
+      if (firebaseVapidKey && Object.values(firebaseConfig).every(Boolean) && await firebaseSupported()) {
+        const oldRegistration = await navigator.serviceWorker.getRegistration("/");
+        const oldSubscription = await oldRegistration?.pushManager.getSubscription();
+        if (oldSubscription) {
+          const response = await fetch("/api/push-subscriptions", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ endpoint: oldSubscription.endpoint }),
+          });
+          if (!response.ok) throw new Error(await responseError(response, "Could not replace the old subscription."));
+          if (!(await oldSubscription.unsubscribe())) throw new Error("Could not replace the old browser subscription.");
+        }
+        const registration = await registerFirebasePush();
+        await registration.showNotification("CommuniChat notifications are on", {
+          body: "You’ll see chat and call notifications when CommuniChat is in the background.",
+          tag: "communichat-notifications-enabled",
+        });
+        window.localStorage.setItem(callNotificationsStorageKey, "enabled");
+        notifyCallNotificationPreferenceChanged();
+        return;
       }
       await navigator.serviceWorker.register(
         "/call-notifications-sw.js",

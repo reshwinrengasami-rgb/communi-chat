@@ -4,6 +4,7 @@ import type { PushSubscription as WebPushSubscription } from "web-push";
 import { connectToDatabase } from "@/lib/mongodb";
 import { configureWebPush, sendNotification } from "@/lib/web-push";
 import PushSubscription from "@/models/PushSubscription";
+import { sendFirebasePush } from "@/lib/firebase-admin";
 
 export const runtime = "nodejs";
 
@@ -83,11 +84,24 @@ async function sendPushToUsers(
   payload: string,
 ) {
   if (userIds.length === 0) return { sent: 0, failed: 0 };
-  configureWebPush();
   await connectToDatabase();
   const subscriptions = await PushSubscription.find({
     userId: { $in: userIds },
   }).lean();
+  const firebase = sendFirebasePush(userIds, JSON.parse(payload) as Record<string, string>)
+    .catch((error: unknown) => {
+      console.error("Firebase push delivery failed", error);
+      return { sent: 0, failed: 1 };
+    });
+  if (subscriptions.length > 0) {
+    try {
+      configureWebPush();
+    } catch (error) {
+      console.error("Web Push is not configured", error);
+      const result = await firebase;
+      return { sent: result.sent, failed: result.failed + subscriptions.length };
+    }
+  }
   const deliveries = await Promise.allSettled(
     subscriptions.map(async (subscription) => {
       const pushSubscription: WebPushSubscription = {
@@ -118,7 +132,8 @@ async function sendPushToUsers(
   if (failed > 0) {
     console.error(`Web Push delivery failed for ${failed} subscription(s)`);
   }
-  return { sent, failed };
+  const firebaseResult = await firebase;
+  return { sent: sent + firebaseResult.sent, failed: failed + firebaseResult.failed };
 }
 
 function getUserId(value: unknown) {

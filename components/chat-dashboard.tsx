@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -39,6 +40,7 @@ import {
   startCallRingtone,
   stopCallRingtone,
 } from "@/components/call-sound-toggle";
+import { joinIncomingCall } from "@/lib/join-incoming-call";
 import {
   Channel,
   ChannelList as StreamChannelList,
@@ -595,6 +597,8 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
   const [videoClient, setVideoClient] = useState<StreamVideoClient | null>(null);
   const [recoveredIncomingCall, setRecoveredIncomingCall] =
     useState<Call | null>(null);
+  const [autoAcceptCallCid, setAutoAcceptCallCid] = useState<string | null>(null);
+  const [notificationCallError, setNotificationCallError] = useState("");
   const [activeCall, setActiveCall] = useState<Call | null>(null);
   const [pendingIncomingCall, setPendingIncomingCall] =
     useState<PendingIncomingCall | null>(null);
@@ -756,10 +760,7 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
 
     async function registerAndroidDevice() {
       try {
-        await client.createDevice({
-          id: token,
-          push_provider: "firebase",
-        });
+        await client.addDevice(token, "firebase");
         if (!cancelled) {
           console.log("Android device registered with Stream Chat");
         }
@@ -803,7 +804,8 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
           user: credentials.user,
           token: credentials.token,
         });
-        void connectedVideo
+        if (!new URL(window.location.href).searchParams.has("call")) {
+          void connectedVideo
           .queryCalls({
             filter_conditions: {
               members: { $in: [credentials.user.id] },
@@ -822,6 +824,7 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
           .catch((error: unknown) => {
             console.error("Unable to check for active incoming calls", error);
           });
+        }
 
         if (cancelled) {
           await connectedChat.disconnectUser();
@@ -854,19 +857,65 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
   }, []);
 
   useEffect(() => {
+    if (!chatClient) return;
+    const androidWindow = window as Window & {
+      AndroidBridge?: unknown;
+      communiChatAndroidVisible?: boolean;
+    };
+    if (!androidWindow.AndroidBridge) return;
+
+    let active = true;
+    let closing = Promise.resolve();
+    let needsRecovery = false;
+    const isAppVisible = () => androidWindow.communiChatAndroidVisible !== false;
+    const updateConnection = () => {
+      if (!isAppVisible()) {
+        needsRecovery = true;
+        closing = chatClient.closeConnection().catch((error: unknown) => {
+          console.error("Unable to close Android chat connection", error);
+        });
+      } else {
+        void closing.then(async () => {
+          if (active && isAppVisible()) {
+            await chatClient.openConnection();
+            if (active && isAppVisible() && needsRecovery) {
+              await chatClient.recoverState();
+              needsRecovery = false;
+            }
+          }
+        }).catch((error: unknown) => {
+          console.error("Unable to reopen Android chat connection", error);
+        });
+      }
+    };
+    window.addEventListener("communichat:android-visibility", updateConnection);
+    updateConnection();
+    return () => {
+      active = false;
+      window.removeEventListener("communichat:android-visibility", updateConnection);
+    };
+  }, [chatClient]);
+
+  useEffect(() => {
     if (!videoClient) return;
     const url = new URL(window.location.href);
     const callCid = url.searchParams.get("call");
     if (!callCid || openedNotificationCall.current === callCid) return;
+    const shouldAccept = url.searchParams.get("acceptCall") === "1";
     openedNotificationCall.current = callCid;
     let cancelled = false;
+    let resolved = false;
 
     void videoClient
       .onRingingCall(callCid)
       .then((call) => {
         if (cancelled) return;
+        resolved = true;
+        setNotificationCallError("");
+        setAutoAcceptCallCid(shouldAccept ? callCid : null);
         setRecoveredIncomingCall(call);
         url.searchParams.delete("call");
+        url.searchParams.delete("acceptCall");
         window.history.replaceState(
           window.history.state,
           "",
@@ -875,10 +924,18 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
       })
       .catch((error: unknown) => {
         console.error("Unable to open the call from its notification", error);
+        if (!cancelled) {
+          setNotificationCallError(
+            "Could not open this call. It may have ended; please try again.",
+          );
+        }
       });
 
     return () => {
       cancelled = true;
+      if (!resolved && openedNotificationCall.current === callCid) {
+        openedNotificationCall.current = null;
+      }
     };
   }, [videoClient]);
 
@@ -954,7 +1011,9 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
             )}
             <IncomingCallPrompt
               recoveredCall={recoveredIncomingCall}
+              autoAcceptCallCid={autoAcceptCallCid}
               onDecline={(call, participants) => {
+                setAutoAcceptCallCid(null);
                 setPendingIncomingCall({
                   call,
                   participants,
@@ -963,12 +1022,21 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
                 setRecoveredIncomingCall(null);
               }}
               onJoin={(call, warning) => {
+                setAutoAcceptCallCid(null);
                 setRecoveredIncomingCall(null);
                 setPendingIncomingCall(null);
                 setCallNotice(warning ?? "");
                 setActiveCall(call);
               }}
             />
+            {notificationCallError && (
+              <div role="alert" className="fixed bottom-5 left-5 z-[70] rounded-lg bg-rose-900 p-4 text-sm text-white">
+                {notificationCallError}
+                <button className="ml-3 underline" onClick={() => setNotificationCallError("")}>
+                  Dismiss
+                </button>
+              </div>
+            )}
             {pendingIncomingCall && (
               <DeclinedCallBanner
                 pendingCall={pendingIncomingCall}
@@ -2231,6 +2299,7 @@ function IncomingCallPrompt({
   onJoin,
   onDecline,
   recoveredCall,
+  autoAcceptCallCid,
 }: {
   onJoin: (call: Call, cameraWarning?: string) => void;
   onDecline: (
@@ -2238,6 +2307,7 @@ function IncomingCallPrompt({
     participants: PendingIncomingCall["participants"],
   ) => void;
   recoveredCall: Call | null;
+  autoAcceptCallCid: string | null;
 }) {
   const calls = useCalls();
   const incomingCall =
@@ -2291,6 +2361,7 @@ function IncomingCallPrompt({
       call={incomingCall}
       onJoin={onJoin}
       onDecline={onDecline}
+      autoAccept={incomingCall.cid === autoAcceptCallCid}
     />
   );
 }
@@ -2299,8 +2370,10 @@ function IncomingCallDialog({
   call,
   onJoin,
   onDecline,
+  autoAccept,
 }: {
   call: Call;
+  autoAccept: boolean;
   onJoin: (call: Call, cameraWarning?: string) => void;
   onDecline: (
     call: Call,
@@ -2309,24 +2382,15 @@ function IncomingCallDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const autoAcceptStarted = useRef(false);
   const callerName = call.state.createdBy?.name ?? "A teammate";
 
-  async function acceptCall() {
+  const acceptCall = useCallback(async () => {
     stopCallRingtone();
     setBusy(true);
     setError("");
     try {
-      await call.join();
-      let cameraWarning = "";
-      if (call.type !== "audio_call") {
-        try {
-          await call.camera.enable();
-        } catch (cause) {
-          console.error("Unable to enable camera for incoming call", cause);
-          cameraWarning =
-            "You joined without video. Allow camera access, then turn on your camera.";
-        }
-      }
+      const cameraWarning = await joinIncomingCall(call);
       onJoin(call, cameraWarning);
     } catch (cause) {
       console.error("Unable to join incoming call", cause);
@@ -2334,7 +2398,13 @@ function IncomingCallDialog({
       startCallRingtone();
       setBusy(false);
     }
-  }
+  }, [call, onJoin]);
+
+  useEffect(() => {
+    if (!autoAccept || autoAcceptStarted.current) return;
+    autoAcceptStarted.current = true;
+    void acceptCall();
+  }, [acceptCall, autoAccept]);
 
   async function declineCall() {
     stopCallRingtone();
