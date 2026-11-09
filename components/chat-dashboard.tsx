@@ -1758,23 +1758,15 @@ function WorkspaceHeader({
         crypto.randomUUID(),
       );
       activeCall = call;
-      // await call.getOrCreate({
-      //   ring: true,
-      //   video: videoEnabled,
-      //   data: {
-      //     members: Object.keys(channel.state.members).map((id) => ({ user_id: id })),
-      //   },
-      // });
       await call.getOrCreate({
-  ring: true,
-  notify: true,
-  video: videoEnabled,
-  data: {
-    members: Object.keys(channel.state.members).map((id) => ({
-      user_id: id,
-    })),
-  },
-});
+        ring: true,
+        video: videoEnabled,
+        data: {
+          members: Object.keys(channel.state.members).map((id) => ({
+            user_id: id,
+          })),
+        },
+      });
       await call.join();
       if (videoEnabled) await call.camera.enable();
       onStartCall(call);
