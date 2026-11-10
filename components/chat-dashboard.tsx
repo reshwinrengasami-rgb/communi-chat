@@ -1787,21 +1787,21 @@ function WorkspaceHeader({
 
   return (
     <>
-    <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-white/[0.07] px-3 sm:h-[76px] sm:px-7">
+    <header className="flex h-16 shrink-0 items-center justify-between gap-1 border-b border-white/[0.07] px-2 sm:h-[76px] sm:gap-2 sm:px-7">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <button
             type="button"
             aria-label="Back to conversations"
             onClick={() => setActiveChannel(undefined)}
-            className="grid size-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white md:hidden"
+            className="grid size-10 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white md:hidden"
           >
-            <ArrowLeft size={17} />
+            <ArrowLeft size={22} />
           </button>
           {channel?.data?.name ? (
-            <Hash size={16} className="shrink-0 text-emerald-500" />
+            <Hash size={20} className="shrink-0 text-emerald-500" />
           ) : (
-            <MessageCircle size={16} className="shrink-0 text-emerald-500" />
+            <MessageCircle size={20} className="shrink-0 text-emerald-500" />
           )}
           <h1 className="truncate text-sm font-semibold">{channelName}</h1>
         </div>
@@ -1842,10 +1842,10 @@ function WorkspaceHeader({
               aria-expanded={groupSettingsOpen}
               title="Group settings"
               onClick={() => setGroupSettingsOpen((open) => !open)}
-              className="flex h-9 items-center gap-1 rounded-lg px-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+              className="flex h-10 items-center gap-1 rounded-lg px-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
             >
-              <Settings size={17} />
-              <ChevronDown size={14} />
+              <Settings size={22} />
+              <ChevronDown size={16} />
             </button>
             {groupSettingsOpen && (
               <div
@@ -1879,18 +1879,18 @@ function WorkspaceHeader({
           title="Request an audio call"
           disabled={!channel?.id || startingCall}
           onClick={() => void startCall(false)}
-          className="grid size-9 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
+          className="grid size-10 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
         >
-          <Headphones size={17} />
+          <Headphones size={22} />
         </button>
         <button
           aria-label="Start video call"
           title={startingCall ? "Requesting call…" : "Request a video call"}
           disabled={!channel?.id || startingCall}
           onClick={() => void startCall(true)}
-          className="grid size-9 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
+          className="grid size-10 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
         >
-          <Video size={17} />
+          <Video size={22} />
         </button>
         <span className="mx-1 h-5 w-px bg-white/10" />
         <CallSoundToggle />
@@ -1990,9 +1990,9 @@ function ThemeToggle({
       aria-label={`Switch to ${nextTheme} theme`}
       title={`Switch to ${nextTheme} theme`}
       onClick={onToggle}
-      className="grid size-8 shrink-0 place-items-center rounded-lg text-emerald-500 transition hover:bg-emerald-500/10"
+      className="grid size-10 shrink-0 place-items-center rounded-lg text-emerald-500 transition hover:bg-emerald-500/10"
     >
-      {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+      {theme === "dark" ? <Sun size={21} /> : <Moon size={21} />}
     </button>
   );
 }

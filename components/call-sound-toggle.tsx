@@ -452,13 +452,13 @@ export function CallSoundToggle() {
         aria-pressed={enabled}
         title={enabled ? "Mute incoming call sound" : "Enable incoming call sound"}
         onClick={() => void toggleSound()}
-        className={`grid size-9 place-items-center rounded-lg transition ${
+        className={`grid size-10 place-items-center rounded-lg transition ${
           enabled
             ? "bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20"
             : "text-slate-400 hover:bg-white/[0.06] hover:text-white"
         }`}
       >
-        {enabled ? <Volume2 size={17} /> : <VolumeX size={17} />}
+        {enabled ? <Volume2 size={22} /> : <VolumeX size={22} />}
       </button>
       <button
         type="button"
@@ -468,9 +468,9 @@ export function CallSoundToggle() {
           setSettingsOpen((open) => !open);
           setError("");
         }}
-        className="grid size-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+        className="grid size-9 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
       >
-        <Music2 size={15} />
+        <Music2 size={19} />
       </button>
       {settingsOpen && (
         <div className="absolute right-0 top-full z-[70] mt-2 w-72 rounded-xl border border-white/10 bg-[#171821] p-3 text-slate-200 shadow-xl">
@@ -801,13 +801,13 @@ export function CallNotificationsToggle() {
             : "Enable call notifications"
         }
         onClick={() => void toggleNotifications()}
-        className={`grid size-9 place-items-center rounded-lg transition ${
+        className={`grid size-10 place-items-center rounded-lg transition ${
           enabled
             ? "bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20"
             : "text-slate-400 hover:bg-white/[0.06] hover:text-white"
         }`}
       >
-        {enabled ? <Bell size={17} /> : <BellOff size={17} />}
+        {enabled ? <Bell size={22} /> : <BellOff size={22} />}
       </button>
       {enabled && (
         <button
@@ -816,9 +816,9 @@ export function CallNotificationsToggle() {
           title="Send a push test notification"
           disabled={testing}
           onClick={() => void sendTestNotification()}
-          className="grid size-9 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-50"
+          className="grid size-10 place-items-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-50"
         >
-          <BellRing size={16} />
+          <BellRing size={21} />
         </button>
       )}
       {error && (
