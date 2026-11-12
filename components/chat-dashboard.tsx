@@ -12,6 +12,7 @@ import {
 import {
   ArrowLeft,
   Activity,
+  Camera,
   ChevronDown,
   Hash,
   Headphones,
@@ -41,6 +42,7 @@ import {
   stopCallRingtone,
 } from "@/components/call-sound-toggle";
 import { joinIncomingCall } from "@/lib/join-incoming-call";
+import { peopleSearchFilter } from "@/lib/people-search";
 import {
   Channel,
   ChannelList as StreamChannelList,
@@ -81,7 +83,7 @@ type DashboardUser = {
 type StreamBootstrap = {
   apiKey: string;
   token: string;
-  user: { id: string; name: string; image: string };
+  user: { id: string; name: string; image: string; username: string };
 };
 
 type ColorTheme = "light" | "dark";
@@ -108,6 +110,15 @@ type CameraEffects = {
 };
 
 const callJoinWindowMs = 5 * 60 * 1000;
+
+function subscribeToMobileDevice() {
+  return () => {};
+}
+
+function isMobileDevice() {
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
 
 const cameraFilterCss: Record<Exclude<CameraFilter, "none">, string> = {
   mono: "grayscale(1)",
@@ -1312,22 +1323,23 @@ function NewConversation({
 
   useEffect(() => {
     if (!open) return;
+    let active = true;
+    const filter = peopleSearchFilter(query);
+    if (!filter) {
+      return () => {
+        active = false;
+      };
+    }
     const timer = window.setTimeout(async () => {
       setLoading(true);
+      setError("");
       try {
         const result = await client.queryUsers(
-          query.trim()
-            ? {
-                $or: [
-                  { name: { $autocomplete: query.trim() } },
-                  { id: { $autocomplete: query.trim() } },
-                ],
-              }
-            : {},
+          filter,
           { name: 1 },
           { limit: 20 },
         );
-        setUsers(
+        if (active) setUsers(
           result.users
             .filter((candidate) => candidate.id !== client.userID)
             .map((candidate) => ({
@@ -1338,12 +1350,15 @@ function NewConversation({
         );
       } catch (cause) {
         console.error("Unable to search workspace members", cause);
-        setError("Could not load people. Please try again.");
+        if (active) setError("Could not load people. Please try again.");
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }, 200);
-    return () => window.clearTimeout(timer);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
   }, [client, open, query]);
 
   async function startConversation(memberId: string) {
@@ -1363,6 +1378,8 @@ function NewConversation({
       onChannelCreated(channel);
       setOpen(false);
       setQuery("");
+      setUsers([]);
+      setLoading(false);
       setSelectedUsers([]);
     } catch (cause) {
       console.error("Unable to create conversation", cause);
@@ -1395,6 +1412,8 @@ function NewConversation({
       onChannelCreated(channel);
       setOpen(false);
       setQuery("");
+      setUsers([]);
+      setLoading(false);
       setGroupName("");
       setSelectedUsers([]);
     } catch (cause) {
@@ -1465,7 +1484,12 @@ function NewConversation({
         <input
           autoFocus
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setUsers([]);
+            setLoading(false);
+            setError("");
+            setQuery(event.target.value);
+          }}
           placeholder="Search by name or username…"
           className="mt-5 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-slate-600 focus:border-emerald-500/50"
         />
@@ -1477,10 +1501,10 @@ function NewConversation({
           )}
           {!loading && users.length === 0 && !error && (
             <p className="px-2 py-4 text-center text-xs text-slate-500">
-              No teammates found.
+              {query.trim() ? "No people found." : "Search for someone to start a conversation."}
             </p>
           )}
-          {users.map((candidate) => {
+          {query.trim() && users.map((candidate) => {
             const selected = selectedUsers.includes(candidate.id);
             return (
             <button
@@ -2026,19 +2050,18 @@ function GroupMemberManager({
 
   useEffect(() => {
     let active = true;
+    const filter = peopleSearchFilter(query);
+    if (!filter) {
+      return () => {
+        active = false;
+      };
+    }
     const timer = window.setTimeout(async () => {
       setSearching(true);
       setError("");
       try {
         const result = await client.queryUsers(
-          query.trim()
-            ? {
-                $or: [
-                  { name: { $autocomplete: query.trim() } },
-                  { id: { $autocomplete: query.trim() } },
-                ],
-              }
-            : {},
+          filter,
           { name: 1 },
           { limit: 20 },
         );
@@ -2214,12 +2237,22 @@ function GroupMemberManager({
           <h3 className="text-xs font-semibold text-slate-200">Add people</h3>
           <input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setUsers([]);
+              setSearching(false);
+              setError("");
+              setQuery(event.target.value);
+            }}
             placeholder="Search by name or username"
             aria-label="Search people to add"
             className="mt-2 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-slate-600 focus:border-emerald-500/50"
           />
           <div className="mt-2 max-h-40 overflow-y-auto">
+            {!query.trim() && (
+              <p className="px-2 py-3 text-center text-xs text-slate-500">
+                Search for someone to add.
+              </p>
+            )}
             {searching && (
               <p className="px-2 py-3 text-center text-xs text-slate-500">
                 Searching…
@@ -2759,7 +2792,7 @@ function CallStage({ call }: { call: Call }) {
     <div className="h-full min-h-0 min-w-0 overflow-hidden rounded-2xl bg-[#090a0f]">
       {screenSharers.length > 0 ? (
         <div className="flex h-full min-h-0 flex-col gap-2 p-2">
-          <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-black">
+          <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-1 gap-2 overflow-auto rounded-xl bg-black sm:grid-cols-2">
             {screenSharers.map((participant) => (
               <ParticipantView
                 key={`${participant.userId}-screen`}
@@ -2769,20 +2802,18 @@ function CallStage({ call }: { call: Call }) {
             ))}
           </div>
           <div className="flex h-28 shrink-0 gap-2 overflow-x-auto">
-            {participants
-              .filter((participant) => !screenSharers.includes(participant))
-              .map((participant) => (
-                <div
-                  key={participant.sessionId}
-                  className="h-full w-40 shrink-0 overflow-hidden rounded-xl"
-                >
-                  <ParticipantView participant={participant} />
-                </div>
-              ))}
+            {participants.map((participant) => (
+              <div
+                key={participant.sessionId}
+                className="h-full w-40 shrink-0 overflow-hidden rounded-xl"
+              >
+                <ParticipantView participant={participant} />
+              </div>
+            ))}
           </div>
         </div>
       ) : (
-        <PaginatedGridLayout groupSize={2} pageArrowsVisible={false} />
+        <PaginatedGridLayout groupSize={4} pageArrowsVisible />
       )}
     </div>
   );
@@ -2811,6 +2842,8 @@ function CallControls({
   >(null);
   const [effectError, setEffectError] = useState("");
   const [screenShareError, setScreenShareError] = useState("");
+  const [cameraError, setCameraError] = useState("");
+  const isMobile = useSyncExternalStore(subscribeToMobileDevice, isMobileDevice, () => false);
   useEffect(() => {
     if (
       filter === "none" &&
@@ -2929,6 +2962,21 @@ function CallControls({
         >
           <Video size={18} />
         </ControlButton>
+        {isMobile && camera.isEnabled && (
+          <ControlButton
+            label="Switch camera"
+            onClick={() => {
+              setCameraError("");
+              void camera.camera.flip().catch((error: unknown) => {
+                console.error("Unable to switch camera", error);
+                setCameraError("Could not switch cameras on this device.");
+              });
+            }}
+            active
+          >
+            <Camera size={18} />
+          </ControlButton>
+        )}
         <ControlButton
           label={screenShare.isEnabled ? "Stop sharing" : "Share screen"}
           onClick={() => {
@@ -2952,9 +3000,9 @@ function CallControls({
           <X size={19} />
         </button>
       </div>
-      {(effectError || screenShareError) && (
+      {(effectError || screenShareError || cameraError) && (
         <p role="alert" className="max-w-sm text-center text-xs text-rose-300">
-          {effectError || screenShareError}
+          {effectError || screenShareError || cameraError}
         </p>
       )}
       <p className="max-w-md text-center text-[10px] leading-4 text-slate-500">

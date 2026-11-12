@@ -70,7 +70,7 @@ export function LandingPage() {
       <section className="landing-grid relative mx-auto w-full max-w-7xl px-5 pb-20 pt-10 sm:px-8 sm:pb-28 sm:pt-16 lg:pt-20">
         <div className="relative z-10">
           <h1 className="max-w-3xl text-[clamp(3.2rem,7.5vw,6.6rem)] font-semibold leading-[0.98] tracking-[-0.075em] text-white">
-            Chatting, 
+            Communicating,{" "}
             <span className="landing-gradient block">Simplified.</span>
           </h1>
           <p className="mt-7 max-w-xl text-base leading-7 text-slate-400 sm:text-lg sm:leading-8">

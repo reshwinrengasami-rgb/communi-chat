@@ -49,6 +49,16 @@ The authenticated `/api/stream/token` route provisions the signed-in user in Str
 
 Create a direct message or group channel from the **+** button in the conversation rail. Use the **GIF** button next to the composer to search and send a GIF (leave the search empty for a random GIF); Stream's Giphy command must be enabled for the channel type in the Stream dashboard. Call buttons invite members of the selected conversation; recipients can join or decline from the incoming call prompt. Each invite creates a new Stream call and sends the ring event with the call request. Video resolution is adaptive, so network conditions and camera hardware may result in a lower resolution. Stream's channel permissions and upload settings are managed in the Stream dashboard. For a production deployment, configure Clerk's allowed origins and Stream's production permissions.
 
+The people picker shows results only after a partial name or username is entered.
+Usernames are synchronized to Stream when a user signs in or a recent chat
+member's profile is refreshed. This is a user-interface restriction, not a
+server-side privacy boundary: users with Stream user-query permission may still
+query the directory directly. Restrict Stream permissions and implement an
+authorized server-side search before relying on this for directory privacy.
+In calls, mobile devices can switch cameras when the camera is enabled. Screen
+sharing depends on browser and platform support and is not guaranteed in mobile
+WebViews.
+
 On Android, accepting an incoming call from its notification opens CommuniChat
 and joins the call automatically. Opening the notification without accepting
 still shows the incoming-call prompt. The website must be deployed with this

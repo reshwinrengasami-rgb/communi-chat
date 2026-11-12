@@ -44,6 +44,7 @@ async function syncChannelMemberProfiles(
           profile.username ||
           profile.id,
         image: profile.imageUrl,
+        username: profile.username ?? "",
       })),
     );
   }
@@ -93,6 +94,7 @@ export async function GET() {
         clerkUser.username ||
         email,
       image: clerkUser.imageUrl,
+      username: clerkUser.username ?? "",
     });
 
     return NextResponse.json({
@@ -105,6 +107,7 @@ export async function GET() {
           clerkUser.username ||
           email,
         image: clerkUser.imageUrl,
+        username: clerkUser.username ?? "",
       },
     });
   } catch (error) {
@@ -161,6 +164,7 @@ export async function POST() {
       id: userId,
       name,
       image: clerkUser.imageUrl,
+      username: clerkUser.username ?? "",
     });
     await syncChannelMemberProfiles(streamServer, userId);
 
