@@ -8,99 +8,63 @@ import { sendFirebasePush } from "@/lib/firebase-admin";
 
 export const runtime = "nodejs";
 
-function getPushErrorStatus(error: unknown) {
-  if (
-    typeof error !== "object" ||
-    error === null ||
-    !("statusCode" in error) ||
-    typeof error.statusCode !== "number"
-  ) {
-    return null;
-  }
-  return error.statusCode;
-}
-
-export async function POST() {
+export async function POST(request: Request) {
   const { userId } = await auth();
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
+  if (!body || typeof body !== "object" || !("type" in body) || !("target" in body) ||
+      (body.type !== "firebase" && body.type !== "webpush") ||
+      typeof body.target !== "string" || body.target.length === 0 || body.target.length > 4096) {
+    return NextResponse.json({ error: "Invalid notification target." }, { status: 400 });
   }
 
+  const payload = {
+    type: "message",
+    title: "CommuniChat test notification",
+    body: "Push notifications are reaching this device.",
+  };
   try {
-    const firebaseResult = await sendFirebasePush([userId], {
-      type: "message",
-      title: "CommuniChat test notification",
-      body: "Push notifications are reaching this device.",
-    }).catch((error: unknown) => {
-      console.error("Firebase test delivery failed", error);
-      return { sent: 0, failed: 1 };
-    });
-    if (firebaseResult.sent > 0) return NextResponse.json(firebaseResult);
-    configureWebPush();
-    await connectToDatabase();
-    const subscriptions = await PushSubscription.find({ userId }).lean();
-    if (subscriptions.length === 0) {
-      return NextResponse.json(
-        { error: "No notification subscription found. Turn notifications off and on, then try again." },
-        { status: 404 },
-      );
-    }
-
-    const payload = JSON.stringify({
-      title: "CommuniChat test notification",
-      body: "Push notifications are reaching this device.",
-      callCid: "",
-    });
-    const deliveries = await Promise.allSettled(
-      subscriptions.map(async (subscription) => {
+    if (body.type === "firebase") {
+      const result = await sendFirebasePush([userId], payload, body.target);
+      if (result.sent === 0) {
+        return NextResponse.json(
+          { error: "This device could not receive the test. Re-enable notifications and try again." },
+          { status: result.failed > 0 ? 502 : 404 },
+        );
+      }
+    } else {
+      await connectToDatabase();
+      const subscription = await PushSubscription.findOne({ userId, endpoint: body.target }).lean<{
+        endpoint: string;
+        keys: { p256dh: string; auth: string };
+      } | null>();
+      if (!subscription) {
+        return NextResponse.json({ error: "This device is not subscribed. Re-enable notifications and try again." }, { status: 404 });
+      }
+      configureWebPush();
+      try {
         const pushSubscription: WebPushSubscription = {
           endpoint: subscription.endpoint,
           keys: subscription.keys,
         };
-        try {
-          await sendNotification(pushSubscription, payload, { TTL: 60 });
-          return "sent" as const;
-        } catch (error) {
-          const status = getPushErrorStatus(error);
-          if (status === 404 || status === 410) {
-            await PushSubscription.deleteOne({ endpoint: subscription.endpoint });
-            return "expired" as const;
-          }
-          throw error;
+        await sendNotification(pushSubscription, JSON.stringify(payload), { TTL: 60 });
+      } catch (error) {
+        if (typeof error === "object" && error !== null && "statusCode" in error &&
+            (error.statusCode === 404 || error.statusCode === 410)) {
+          await PushSubscription.deleteOne({ userId, endpoint: body.target });
+          return NextResponse.json({ error: "This subscription has expired. Re-enable notifications and try again." }, { status: 410 });
         }
-      }),
-    );
-
-    const sent = deliveries.filter(
-      (delivery) => delivery.status === "fulfilled" && delivery.value === "sent",
-    ).length;
-    const failed = deliveries.filter(
-      (delivery) => delivery.status === "rejected",
-    ).length;
-    if (failed > 0) {
-      const statuses = deliveries
-        .filter((delivery) => delivery.status === "rejected")
-        .map((delivery) =>
-          delivery.status === "rejected"
-            ? getPushErrorStatus(delivery.reason)
-            : null,
-        );
-      console.error("Web Push test delivery failed", { failed, statuses });
+        throw error;
+      }
     }
-
-    if (sent === 0) {
-      return NextResponse.json(
-        { error: "The push service rejected delivery. Re-enable notifications and check the server VAPID keys." },
-        { status: 502 },
-      );
-    }
-
-    return NextResponse.json({ sent, failed });
+    return NextResponse.json({ sent: 1 });
   } catch (error) {
-    console.error("Unable to send a Web Push test notification", error);
-    return NextResponse.json(
-      { error: "Could not send the test notification. Check the server VAPID and database configuration." },
-      { status: 500 },
-    );
+    console.error("Unable to send a test notification", error);
+    return NextResponse.json({ error: "Could not send this device's test notification. Check the server push configuration." }, { status: 500 });
   }
 }

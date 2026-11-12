@@ -64,7 +64,8 @@ import {
   StreamVideo,
   StreamVideoClient,
   PaginatedGridLayout,
-  ParticipantView,
+  SpeakerLayout,
+  hasScreenShare,
   CallingState,
   useCalls,
   useCallStateHooks,
@@ -114,7 +115,11 @@ const callJoinWindowMs = 5 * 60 * 1000;
 
 async function searchPeople(search: string): Promise<Array<{ id: string; name?: string; image?: string }>> {
   const response = await fetch(`/api/people?q=${encodeURIComponent(search)}`, { cache: "no-store" });
-  if (!response.ok) throw new Error("Could not search people.");
+  if (!response.ok) {
+    throw new Error(response.status === 429
+      ? "Too many searches. Please wait a moment and try again."
+      : "Could not search people. Please try again.");
+  }
   const data: unknown = await response.json();
   if (!data || typeof data !== "object" || !("users" in data) || !Array.isArray(data.users) ||
       !data.users.every((user: unknown) => user && typeof user === "object" && "id" in user && typeof user.id === "string")) {
@@ -1315,7 +1320,7 @@ function NewConversation({
         );
       } catch (cause) {
         console.error("Unable to search workspace members", cause);
-        if (active) setError("Could not load people. Please try again.");
+        if (active) setError(cause instanceof Error ? cause.message : "Could not load people. Please try again.");
       } finally {
         if (active) setLoading(false);
       }
@@ -2040,7 +2045,7 @@ function GroupMemberManager({
         }
       } catch (cause) {
         console.error("Unable to search group members", cause);
-        if (active) setError("Could not search people. Please try again.");
+        if (active) setError(cause instanceof Error ? cause.message : "Could not search people. Please try again.");
       } finally {
         if (active) setSearching(false);
       }
@@ -2747,33 +2752,13 @@ function CallStage({ call }: { call: Call }) {
   }, [call]);
 
   const screenSharers = participants.filter(
-    (participant) => participant.screenShareStream,
+    hasScreenShare,
   );
 
   return (
     <div className="h-full min-h-0 min-w-0 overflow-hidden rounded-2xl bg-[#090a0f]">
       {screenSharers.length > 0 ? (
-        <div className="flex h-full min-h-0 flex-col gap-2 p-2">
-          <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-1 gap-2 overflow-auto rounded-xl bg-black sm:grid-cols-2">
-            {screenSharers.map((participant) => (
-              <ParticipantView
-                key={`${participant.userId}-screen`}
-                participant={participant}
-                trackType="screenShareTrack"
-              />
-            ))}
-          </div>
-          <div className="flex h-28 shrink-0 gap-2 overflow-x-auto">
-            {participants.map((participant) => (
-              <div
-                key={participant.sessionId}
-                className="h-full w-40 shrink-0 overflow-hidden rounded-xl"
-              >
-                <ParticipantView participant={participant} />
-              </div>
-            ))}
-          </div>
-        </div>
+        <SpeakerLayout participantsBarPosition="bottom" pageArrowsVisible />
       ) : (
         <PaginatedGridLayout groupSize={4} pageArrowsVisible />
       )}
@@ -2804,6 +2789,8 @@ function CallControls({
   >(null);
   const [effectError, setEffectError] = useState("");
   const [screenShareError, setScreenShareError] = useState("");
+  const [screenShareBusy, setScreenShareBusy] = useState(false);
+  const [shareAudio, setShareAudio] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const isMobile = useSyncExternalStore(subscribeToMobileDevice, isMobileDevice, () => false);
   useEffect(() => {
@@ -2941,18 +2928,26 @@ function CallControls({
         )}
         <ControlButton
           label={screenShare.isEnabled ? "Stop sharing" : "Share screen"}
+          disabled={screenShareBusy}
           onClick={() => {
             setScreenShareError("");
+            if (screenShareBusy) return;
             if (!screenShare.isEnabled && !navigator.mediaDevices?.getDisplayMedia) {
               setScreenShareError("Screen sharing is not supported in this browser or app. Try a supported desktop browser.");
               return;
             }
-            void screenShare.screenShare.toggle().catch((error: unknown) => {
-              console.error("Unable to share screen", error);
-              setScreenShareError(
-                "Screen sharing failed. Check browser permissions and try again.",
-              );
-            });
+            if (!screenShare.isEnabled && shareAudio) {
+              screenShare.screenShare.enableScreenShareAudio();
+            }
+            setScreenShareBusy(true);
+            void screenShare.screenShare.toggle()
+              .catch((error: unknown) => {
+                console.error("Unable to share screen", error);
+                setScreenShareError(error instanceof Error && error.name === "NotAllowedError"
+                  ? "Screen sharing was cancelled or permission was denied."
+                  : "Screen sharing failed. Check browser and call permissions, then try again.");
+              })
+              .finally(() => setScreenShareBusy(false));
           }}
           active={screenShare.isEnabled}
         >
@@ -2966,6 +2961,24 @@ function CallControls({
           <X size={19} />
         </button>
       </div>
+      <label className="flex items-center gap-2 text-xs text-slate-400">
+        <input
+          type="checkbox"
+          checked={shareAudio}
+          disabled={screenShare.isEnabled || screenShareBusy}
+          onChange={(event) => {
+            const enabled = event.target.checked;
+            setShareAudio(enabled);
+            if (!enabled) {
+              void screenShare.screenShare.disableScreenShareAudio().catch((error: unknown) => {
+                console.error("Unable to disable screen share audio", error);
+                setScreenShareError("Could not change screen share audio. Please try again.");
+              });
+            }
+          }}
+        />
+        Share screen audio when supported
+      </label>
       {(effectError || screenShareError || cameraError) && (
         <p role="alert" className="max-w-sm text-center text-xs text-rose-300">
           {effectError || screenShareError || cameraError}
@@ -3060,18 +3073,22 @@ function ControlButton({
   label,
   active,
   onClick,
+  disabled = false,
 }: {
   children: ReactNode;
   label: string;
   active: boolean;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       aria-label={label}
+      aria-pressed={active}
       title={label}
       onClick={onClick}
-      className={`grid size-11 place-items-center rounded-full transition ${
+      disabled={disabled}
+      className={`grid size-11 place-items-center rounded-full transition disabled:opacity-50 ${
         active
           ? "bg-white/10 text-white hover:bg-white/15"
           : "bg-rose-500/20 text-rose-200 hover:bg-rose-500/30"

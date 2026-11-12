@@ -51,13 +51,21 @@ Create a direct message or group channel from the **+** button in the conversati
 
 The people picker searches registered profiles through an authenticated server
 endpoint after at least two characters of a name or username are entered. It
-does not return email addresses or list users for an empty search. This alone
+does not return email addresses or list users for an empty search. Search is
+limited to 30 requests per signed-in account per minute, with counters stored
+in MongoDB; database failures cause the search to fail rather than bypass the
+limit. This alone
 is not a complete directory privacy boundary: users with Stream user-query
 permission may still query Stream directly. Restrict that permission in the
 Stream dashboard and verify that existing chat and call flows still work.
-In calls, mobile devices can switch cameras when the camera is enabled. Screen
-sharing depends on browser and platform support and is not guaranteed in mobile
-WebViews.
+In calls, mobile devices can switch cameras when the camera is enabled. To
+share a screen, use HTTPS and a browser that supports screen capture, choose
+**Share screen**, and select a screen, window, or tab in the browser's prompt.
+You may opt in to sharing screen audio before starting; the browser and selected
+source determine whether audio is available. Use **Stop sharing** or the
+browser's own stop control to stop. The Stream Video call type must grant the
+screen-share capability. Android and iOS app WebViews may not support browser
+screen capture; native mobile screen sharing is not implemented.
 
 Use the palette button in a conversation header to change the top button size,
 your outgoing bubble color, and the chat background color or photo. Photos must
@@ -106,7 +114,7 @@ delivery.
 1. Generate a VAPID key pair once with `npx web-push generate-vapid-keys`. Keep the private key secret and do not regenerate it after users subscribe.
 2. Set `NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`, and `WEB_PUSH_VAPID_SUBJECT` in `.env.local` and in your hosting provider's environment settings. The subject can be your public HTTPS site URL; the private key must not use a `NEXT_PUBLIC_` prefix.
 3. Deploy the site over HTTPS. In the Stream dashboard, add a webhook to `https://your-domain.example/api/webhooks/stream` and subscribe it to both `call.ring` and `message.new`. The handler verifies Stream's `X-Signature` with `STREAM_API_SECRET` before sending notifications.
-4. Sign in on each browser/device and enable the bell in a conversation header. Allow browser notifications. The app creates and saves a Web Push subscription; use the adjacent ringing-bell button to send an end-to-end push test.
+4. Sign in on each browser/device and enable the bell in a conversation header. Allow browser notifications. The app creates and saves a Web Push or FCM subscription; use the adjacent ringing-bell button to send a push test specifically to that device. A server acceptance response means the push service accepted the request, not that the notification was displayed.
 5. Test a call with the recipient's browser open in the background. The deployed webhook must be publicly reachable; localhost is not reachable by Stream.
 
 The push-subscription API requires the VAPID key pair and stores each signed-in user's browser endpoints in MongoDB. Expired push endpoints are removed automatically. The default incoming-call chime repeats until the call is answered, declined, or ends; an uploaded custom ringtone plays once per incoming call. Sound preferences and uploaded files are saved in that browser; audio files must be smaller than 50 KB. The uploaded call sound is used while the page is running; closed-page push notifications use the sound and vibration behavior provided by the browser and operating system. Web Push does not let a website choose a custom notification sound while its page is closed. Push delivery while the browser is closed depends on browser and operating-system support; a fully stopped browser may not receive pushes.

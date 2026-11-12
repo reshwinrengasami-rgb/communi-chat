@@ -763,8 +763,15 @@ export function CallNotificationsToggle() {
     setMessage("");
     setTesting(true);
     try {
+      const token = window.localStorage.getItem(firebasePushStorageKey);
+      const registration = await navigator.serviceWorker.getRegistration("/");
+      const subscription = token ? null : await registration?.pushManager.getSubscription();
+      const target = token || subscription?.endpoint;
+      if (!target) throw new Error("This device is not subscribed. Re-enable notifications and try again.");
       const response = await fetch("/api/push-subscriptions/test", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: token ? "firebase" : "webpush", target }),
       });
       if (!response.ok) {
         throw new Error(
@@ -792,13 +799,13 @@ export function CallNotificationsToggle() {
       <button
         type="button"
         aria-label={
-          enabled ? "Disable incoming call notifications" : "Enable incoming call notifications"
+          enabled ? "Disable chat and call notifications" : "Enable chat and call notifications"
         }
         aria-pressed={enabled}
         title={
           enabled
-            ? "Disable call notifications"
-            : "Enable call notifications"
+            ? "Disable chat and call notifications"
+            : "Enable chat and call notifications"
         }
         onClick={() => void toggleNotifications()}
         className={`grid size-10 place-items-center rounded-lg transition ${

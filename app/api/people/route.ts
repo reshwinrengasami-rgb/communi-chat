@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { peopleSearchPattern, peopleSearchTerm } from "@/lib/people-search";
 import User from "@/models/User";
+import SearchRateLimit from "@/models/SearchRateLimit";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,23 @@ export async function GET(request: Request) {
   }
   try {
     await connectToDatabase();
+    const now = Date.now();
+    const windowMs = 60_000;
+    const windowStart = Math.floor(now / windowMs) * windowMs;
+    const limit = await SearchRateLimit.findOneAndUpdate(
+      { _id: `${userId}:${windowStart}` },
+      {
+        $inc: { count: 1 },
+        $setOnInsert: { expiresAt: new Date(windowStart + windowMs * 2) },
+      },
+      { upsert: true, new: true },
+    );
+    if (limit.count > 30) {
+      return NextResponse.json(
+        { error: "Too many searches. Please wait a moment and try again." },
+        { status: 429, headers: { "Retry-After": String(Math.ceil((windowStart + windowMs - now) / 1000)) } },
+      );
+    }
     const pattern = peopleSearchPattern(search);
     const users = await User.find({
       clerkId: { $ne: userId },

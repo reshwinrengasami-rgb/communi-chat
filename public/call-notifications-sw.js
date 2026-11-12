@@ -21,6 +21,8 @@ function showCommuniChatNotification(payload) {
 
   return self.registration.showNotification(title, {
       body,
+      icon: "/communichat-logo.png",
+      badge: "/communichat-logo.png",
       tag: isCall
         ? `communichat-call-${callCid}`
         : messageId
@@ -65,7 +67,10 @@ self.addEventListener("notificationclick", (event) => {
               event.notification.data.channelCid,
             );
           }
-          return appWindow.navigate(targetUrl.href).then((client) => client?.focus());
+          return appWindow.navigate(targetUrl.href).then((client) => {
+            if (client) return client.focus();
+            return self.clients.openWindow(targetUrl.href);
+          });
         }
 
         const targetUrl = new URL("/", self.location.origin);

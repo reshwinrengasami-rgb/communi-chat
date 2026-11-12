@@ -18,9 +18,12 @@ function messaging() {
   return getMessaging(app);
 }
 
-export async function sendFirebasePush(userIds: string[], payload: Record<string, string>) {
+export async function sendFirebasePush(userIds: string[], payload: Record<string, string>, token?: string) {
   await connectToDatabase();
-  const subscriptions = await FirebasePushToken.find({ userId: { $in: userIds } }).lean();
+  const subscriptions = await FirebasePushToken.find({
+    userId: { $in: userIds },
+    ...(token ? { token } : {}),
+  }).lean();
   if (subscriptions.length === 0) return { sent: 0, failed: 0 };
   const client = messaging();
   let sent = 0;
@@ -40,6 +43,7 @@ export async function sendFirebasePush(userIds: string[], payload: Record<string
       if (code === "messaging/registration-token-not-registered" ||
           code === "messaging/invalid-registration-token") {
         await FirebasePushToken.deleteOne({ token: batch[index].token });
+        failed++;
       } else {
         failed++;
         console.error("Firebase push delivery failed", code);
