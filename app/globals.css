@@ -192,6 +192,29 @@ input {
   background: transparent;
 }
 
+.communichat-appearance .str-chat__message-list {
+  background-color: var(--communichat-background);
+  background-image: var(--communichat-photo);
+  background-position: center;
+  background-size: cover;
+}
+
+.communichat-appearance .str-chat__message.str-chat__message--me .str-chat__message-bubble {
+  background-color: var(--communichat-bubble);
+}
+
+.communichat-appearance .str-chat__message.str-chat__message--me {
+  --chat-text: var(--communichat-bubble-text);
+}
+
+.communichat-header-actions > button,
+.communichat-header-actions > div > button {
+  width: var(--communichat-header-button);
+  height: var(--communichat-header-button);
+  min-width: var(--communichat-header-button);
+  min-height: var(--communichat-header-button);
+}
+
 .str-chat__channel-list
   .str-chat__channel-list-item
   .str-chat__channel-list-item-data

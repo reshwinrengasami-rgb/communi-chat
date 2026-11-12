@@ -42,7 +42,8 @@ import {
   stopCallRingtone,
 } from "@/components/call-sound-toggle";
 import { joinIncomingCall } from "@/lib/join-incoming-call";
-import { peopleSearchFilter } from "@/lib/people-search";
+import { peopleSearchTerm } from "@/lib/people-search";
+import { AppearanceProvider, AppearanceSettings } from "@/components/appearance-settings";
 import {
   Channel,
   ChannelList as StreamChannelList,
@@ -110,6 +111,17 @@ type CameraEffects = {
 };
 
 const callJoinWindowMs = 5 * 60 * 1000;
+
+async function searchPeople(search: string): Promise<Array<{ id: string; name?: string; image?: string }>> {
+  const response = await fetch(`/api/people?q=${encodeURIComponent(search)}`, { cache: "no-store" });
+  if (!response.ok) throw new Error("Could not search people.");
+  const data: unknown = await response.json();
+  if (!data || typeof data !== "object" || !("users" in data) || !Array.isArray(data.users) ||
+      !data.users.every((user: unknown) => user && typeof user === "object" && "id" in user && typeof user.id === "string")) {
+    throw new Error("The people search returned an invalid response.");
+  }
+  return data.users;
+}
 
 function subscribeToMobileDevice() {
   return () => {};
@@ -604,7 +616,6 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
   );
   const [bootstrap, setBootstrap] = useState<StreamBootstrap | null>(null);
   const [chatClient, setChatClient] = useState<StreamChat | null>(null);
-  const [fcmToken, setFcmToken] = useState<string | null>(null);
   const [videoClient, setVideoClient] = useState<StreamVideoClient | null>(null);
   const [recoveredIncomingCall, setRecoveredIncomingCall] =
     useState<Call | null>(null);
@@ -737,56 +748,14 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
     return () => subscription.unsubscribe();
   }, [chatClient]);
 
-  // Receive the FCM token supplied by the Android WebView bridge.
   useEffect(() => {
-    const handleFcmToken = (event: Event) => {
-      const token = (event as CustomEvent<string>).detail;
-      if (typeof token === "string" && token.length > 0) {
-        console.log("Received Android FCM token");
-        setFcmToken(token);
-      }
-    };
-
-    window.addEventListener("androidFcmToken", handleFcmToken);
-
     const bridge = (
       window as Window & {
         AndroidBridge?: { onReactReady: () => void };
       }
     ).AndroidBridge;
     bridge?.onReactReady();
-
-    return () => {
-      window.removeEventListener("androidFcmToken", handleFcmToken);
-    };
   }, []);
-
-  // Register or refresh this Android installation with Stream once both
-  // the authenticated Chat client and the FCM token are available.
-  useEffect(() => {
-    if (!chatClient || !fcmToken || !chatClient.userID) return;
-    const client = chatClient;
-    const token = fcmToken;
-    let cancelled = false;
-
-    async function registerAndroidDevice() {
-      try {
-        await client.addDevice(token, "firebase");
-        if (!cancelled) {
-          console.log("Android device registered with Stream Chat");
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error("Stream device registration failed:", error);
-        }
-      }
-    }
-
-    void registerAndroidDevice();
-    return () => {
-      cancelled = true;
-    };
-  }, [chatClient, fcmToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1324,8 +1293,8 @@ function NewConversation({
   useEffect(() => {
     if (!open) return;
     let active = true;
-    const filter = peopleSearchFilter(query);
-    if (!filter) {
+    const search = peopleSearchTerm(query);
+    if (!search) {
       return () => {
         active = false;
       };
@@ -1334,13 +1303,9 @@ function NewConversation({
       setLoading(true);
       setError("");
       try {
-        const result = await client.queryUsers(
-          filter,
-          { name: 1 },
-          { limit: 20 },
-        );
+        const result = await searchPeople(search);
         if (active) setUsers(
-          result.users
+          result
             .filter((candidate) => candidate.id !== client.userID)
             .map((candidate) => ({
               id: candidate.id,
@@ -1501,7 +1466,7 @@ function NewConversation({
           )}
           {!loading && users.length === 0 && !error && (
             <p className="px-2 py-4 text-center text-xs text-slate-500">
-              {query.trim() ? "No people found." : "Search for someone to start a conversation."}
+              {peopleSearchTerm(query) ? "No people found." : "Enter at least 2 characters to search."}
             </p>
           )}
           {query.trim() && users.map((candidate) => {
@@ -1582,7 +1547,7 @@ function ChatWindow({
   theme: ColorTheme;
   onToggleTheme: () => void;
 }) {
-  const { channel } = useChatContext();
+  const { channel, client } = useChatContext();
 
   return (
     <main
@@ -1592,7 +1557,7 @@ function ChatWindow({
     >
       <Channel>
         <Window>
-          <div className="flex h-full min-h-0 flex-col">
+          <AppearanceProvider userId={client.userID ?? ""}>
             <WorkspaceHeader
               onStartCall={onStartCall}
               videoClient={videoClient}
@@ -1607,7 +1572,7 @@ function ChatWindow({
                 <MessageComposer focus />
               </div>
             </div>
-          </div>
+          </AppearanceProvider>
         </Window>
         <Thread />
       </Channel>
@@ -1811,7 +1776,7 @@ function WorkspaceHeader({
 
   return (
     <>
-    <header className="flex h-16 shrink-0 items-center justify-between gap-1 border-b border-white/[0.07] px-2 sm:h-[76px] sm:gap-2 sm:px-7">
+    <header className="communichat-header flex min-h-16 shrink-0 items-center justify-between gap-1 border-b border-white/[0.07] px-2 sm:min-h-[76px] sm:gap-2 sm:px-7">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <button
@@ -1853,7 +1818,8 @@ function WorkspaceHeader({
           )
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5">
+      <div className="communichat-header-actions flex min-w-0 flex-wrap justify-end items-center gap-0.5 sm:gap-1.5">
+        <AppearanceSettings />
         <div className={channel?.id ? "block" : "hidden"}>
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
@@ -2050,8 +2016,8 @@ function GroupMemberManager({
 
   useEffect(() => {
     let active = true;
-    const filter = peopleSearchFilter(query);
-    if (!filter) {
+    const search = peopleSearchTerm(query);
+    if (!search) {
       return () => {
         active = false;
       };
@@ -2060,14 +2026,10 @@ function GroupMemberManager({
       setSearching(true);
       setError("");
       try {
-        const result = await client.queryUsers(
-          filter,
-          { name: 1 },
-          { limit: 20 },
-        );
+        const result = await searchPeople(search);
         if (active) {
           setUsers(
-            result.users
+            result
               .filter((user) => user.id !== currentUserId)
               .map((user) => ({
                 id: user.id,
@@ -2248,9 +2210,9 @@ function GroupMemberManager({
             className="mt-2 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-slate-600 focus:border-emerald-500/50"
           />
           <div className="mt-2 max-h-40 overflow-y-auto">
-            {!query.trim() && (
+            {!peopleSearchTerm(query) && (
               <p className="px-2 py-3 text-center text-xs text-slate-500">
-                Search for someone to add.
+                Enter at least 2 characters to search.
               </p>
             )}
             {searching && (
@@ -2981,6 +2943,10 @@ function CallControls({
           label={screenShare.isEnabled ? "Stop sharing" : "Share screen"}
           onClick={() => {
             setScreenShareError("");
+            if (!screenShare.isEnabled && !navigator.mediaDevices?.getDisplayMedia) {
+              setScreenShareError("Screen sharing is not supported in this browser or app. Try a supported desktop browser.");
+              return;
+            }
             void screenShare.screenShare.toggle().catch((error: unknown) => {
               console.error("Unable to share screen", error);
               setScreenShareError(

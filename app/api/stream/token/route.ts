@@ -92,7 +92,7 @@ export async function GET() {
       name:
         [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
         clerkUser.username ||
-        email,
+        "CommuniChat user",
       image: clerkUser.imageUrl,
       username: clerkUser.username ?? "",
     });
@@ -105,7 +105,7 @@ export async function GET() {
         name:
           [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
           clerkUser.username ||
-          email,
+          "CommuniChat user",
         image: clerkUser.imageUrl,
         username: clerkUser.username ?? "",
       },
@@ -148,7 +148,7 @@ export async function POST() {
     const name =
       [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
       clerkUser.username ||
-      email;
+      "CommuniChat user";
 
     await syncClerkUser({
       id: clerkUser.id,

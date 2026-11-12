@@ -13,6 +13,15 @@ const settingsSchema = new Schema(
       showOnlineStatus: { type: Boolean, default: true },
       allowDirectMessages: { type: Boolean, default: true },
     },
+    appearance: {
+      type: new Schema({
+        buttonSize: { type: String, enum: ["small", "normal", "large"], required: true },
+        bubbleColor: { type: String, required: true },
+        backgroundColor: { type: String, required: true },
+        backgroundPhoto: { type: String, default: "" },
+      }, { _id: false }),
+      default: undefined,
+    },
   },
   { timestamps: true },
 );

@@ -1,13 +1,8 @@
-import type { UserFilters } from "stream-chat";
-
-export function peopleSearchFilter(query: string): UserFilters | null {
+export function peopleSearchTerm(query: string): string | null {
   const search = query.trim();
-  if (!search) return null;
+  return search.length >= 2 && search.length <= 80 ? search : null;
+}
 
-  return {
-    $or: [
-      { name: { $autocomplete: search } },
-      { username: { $autocomplete: search } },
-    ],
-  };
+export function peopleSearchPattern(search: string): RegExp {
+  return new RegExp(`^${search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i");
 }

@@ -49,15 +49,23 @@ The authenticated `/api/stream/token` route provisions the signed-in user in Str
 
 Create a direct message or group channel from the **+** button in the conversation rail. Use the **GIF** button next to the composer to search and send a GIF (leave the search empty for a random GIF); Stream's Giphy command must be enabled for the channel type in the Stream dashboard. Call buttons invite members of the selected conversation; recipients can join or decline from the incoming call prompt. Each invite creates a new Stream call and sends the ring event with the call request. Video resolution is adaptive, so network conditions and camera hardware may result in a lower resolution. Stream's channel permissions and upload settings are managed in the Stream dashboard. For a production deployment, configure Clerk's allowed origins and Stream's production permissions.
 
-The people picker shows results only after a partial name or username is entered.
-Usernames are synchronized to Stream when a user signs in or a recent chat
-member's profile is refreshed. This is a user-interface restriction, not a
-server-side privacy boundary: users with Stream user-query permission may still
-query the directory directly. Restrict Stream permissions and implement an
-authorized server-side search before relying on this for directory privacy.
+The people picker searches registered profiles through an authenticated server
+endpoint after at least two characters of a name or username are entered. It
+does not return email addresses or list users for an empty search. This alone
+is not a complete directory privacy boundary: users with Stream user-query
+permission may still query Stream directly. Restrict that permission in the
+Stream dashboard and verify that existing chat and call flows still work.
 In calls, mobile devices can switch cameras when the camera is enabled. Screen
 sharing depends on browser and platform support and is not guaranteed in mobile
 WebViews.
+
+Use the palette button in a conversation header to change the top button size,
+your outgoing bubble color, and the chat background color or photo. Photos must
+be PNG, JPEG, or WebP and smaller than 290 KB. Settings are stored on this
+device by default. Enabling account sync stores them, including the photo, in
+MongoDB; existing synced settings replace this device's settings when sync is
+enabled. Disabling sync stops this device updating the account copy; it does not
+delete the account copy or turn off sync on other devices.
 
 On Android, accepting an incoming call from its notification opens CommuniChat
 and joins the call automatically. Opening the notification without accepting
@@ -78,6 +86,10 @@ already enabled using Web Push, turn it off and on to switch to FCM. Browsers
 unsupported by Firebase continue to use Web Push; keep its VAPID settings for
 those browsers and existing subscriptions. FCM background delivery depends on
 the browser and operating system; a force-stopped browser may not receive pushes.
+Stream does not support web push through its native push providers, so browser
+FCM is delivered by the signed Stream webhook and Firebase Admin integration,
+not by a GetStream `firebase-web` provider. See
+[Stream's push notification documentation](https://getstream.io/docs/platform/push-notifications/).
 
 Android uses its own Stream Firebase push provider rather than browser FCM.
 Configure `firebase-android` with the Firebase service account in the Stream
@@ -97,7 +109,7 @@ delivery.
 4. Sign in on each browser/device and enable the bell in a conversation header. Allow browser notifications. The app creates and saves a Web Push subscription; use the adjacent ringing-bell button to send an end-to-end push test.
 5. Test a call with the recipient's browser open in the background. The deployed webhook must be publicly reachable; localhost is not reachable by Stream.
 
-The push-subscription API requires the VAPID key pair and stores each signed-in user's browser endpoints in MongoDB. Expired push endpoints are removed automatically. The default incoming-call chime repeats until the call is answered, declined, or ends; an uploaded custom ringtone plays once per incoming call. Sound preferences and uploaded files are saved in that browser; audio files must be smaller than 2 MB. The uploaded call sound is used while the page is running; closed-page push notifications use the sound and vibration behavior provided by the browser and operating system. Web Push does not let a website choose a custom notification sound while its page is closed. Push delivery while the browser is closed depends on browser and operating-system support; a fully stopped browser may not receive pushes. The Android WebView app needs a native push integration separately.
+The push-subscription API requires the VAPID key pair and stores each signed-in user's browser endpoints in MongoDB. Expired push endpoints are removed automatically. The default incoming-call chime repeats until the call is answered, declined, or ends; an uploaded custom ringtone plays once per incoming call. Sound preferences and uploaded files are saved in that browser; audio files must be smaller than 50 KB. The uploaded call sound is used while the page is running; closed-page push notifications use the sound and vibration behavior provided by the browser and operating system. Web Push does not let a website choose a custom notification sound while its page is closed. Push delivery while the browser is closed depends on browser and operating-system support; a fully stopped browser may not receive pushes.
 
 On iPhone and iPad, install CommuniChat from Safari with **Share → Add to Home Screen**, then open it from its Home Screen icon and allow notifications. Web Push for Home Screen web apps requires iOS/iPadOS 16.4 or newer. Android users can allow notifications in a supported browser; browser settings must also allow CommuniChat notifications.
 
