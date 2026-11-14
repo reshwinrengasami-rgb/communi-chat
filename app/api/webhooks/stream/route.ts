@@ -16,7 +16,7 @@ type CallRingEvent = {
     cid?: unknown;
     id?: unknown;
     type?: unknown;
-    created_by?: { id?: unknown; name?: unknown } | null;
+    created_by?: { id?: unknown; username?: unknown } | null;
     members?: unknown;
   };
 };
@@ -54,7 +54,7 @@ function getCallRingEvent(value: unknown): CallRingEvent | null {
   const createdBy = isRecord(call?.created_by)
     ? {
         id: call.created_by.id,
-        name: call.created_by.name,
+        username: call.created_by.username,
       }
     : null;
 
@@ -82,13 +82,14 @@ function getPushErrorStatus(error: unknown) {
 async function sendPushToUsers(
   userIds: string[],
   payload: string,
+  ttl = 60,
 ) {
   if (userIds.length === 0) return { sent: 0, failed: 0 };
   await connectToDatabase();
   const subscriptions = await PushSubscription.find({
     userId: { $in: userIds },
   }).lean();
-  const firebase = sendFirebasePush(userIds, JSON.parse(payload) as Record<string, string>)
+  const firebase = sendFirebasePush(userIds, JSON.parse(payload) as Record<string, string>, undefined, ttl)
     .catch((error: unknown) => {
       console.error("Firebase push delivery failed", error);
       return { sent: 0, failed: 1 };
@@ -110,7 +111,7 @@ async function sendPushToUsers(
       };
       try {
         await sendNotification(pushSubscription, payload, {
-          TTL: 60,
+          TTL: ttl,
         });
         return "sent" as const;
       } catch (error) {
@@ -214,8 +215,8 @@ export async function POST(request: Request) {
         );
       }
       const callerName =
-        typeof call?.created_by?.name === "string"
-          ? call.created_by.name
+        typeof call?.created_by?.username === "string" && call.created_by.username.trim()
+          ? call.created_by.username.trim()
           : "A teammate";
       const result = await sendPushToUsers(
         recipientIds,
@@ -301,11 +302,11 @@ export async function POST(request: Request) {
     }
 
     const senderName =
-      (isRecord(message?.user) && typeof message.user.name === "string"
-        ? message.user.name
+      (isRecord(message?.user) && typeof message.user.username === "string" && message.user.username.trim()
+        ? message.user.username.trim()
         : isRecord(messageEvent.user) &&
-            typeof messageEvent.user.name === "string"
-          ? messageEvent.user.name
+            typeof messageEvent.user.username === "string" && messageEvent.user.username.trim()
+          ? messageEvent.user.username.trim()
           : "Someone");
     const channelName =
       typeof channel?.name === "string" ? channel.name.trim() : "";
@@ -323,6 +324,7 @@ export async function POST(request: Request) {
           "",
         channelCid: channelCid || `${channelType}:${channelId}`,
       }),
+      7 * 24 * 60 * 60,
     );
     return NextResponse.json({ received: true, ...result });
   } catch (error) {

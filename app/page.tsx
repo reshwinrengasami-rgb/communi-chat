@@ -20,10 +20,7 @@ export default async function HomePage() {
     <ChatDashboard
       user={{
         id: clerkUser.id,
-        name:
-          [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
-          clerkUser.username ||
-          email,
+        name: clerkUser.username?.trim() || "CommuniChat user",
         email,
         imageUrl: clerkUser.imageUrl,
       }}

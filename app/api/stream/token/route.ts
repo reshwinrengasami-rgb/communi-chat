@@ -39,10 +39,7 @@ async function syncChannelMemberProfiles(
     await streamServer.upsertUsers(
       profiles.slice(index, index + 100).map((profile) => ({
         id: profile.id,
-        name:
-          [profile.firstName, profile.lastName].filter(Boolean).join(" ") ||
-          profile.username ||
-          profile.id,
+        name: profile.username?.trim() || "CommuniChat user",
         image: profile.imageUrl,
         username: profile.username ?? "",
       })),
@@ -89,23 +86,18 @@ export async function GET() {
     const streamServer = StreamChat.getInstance(apiKey, apiSecret);
     await streamServer.upsertUser({
       id: userId,
-      name:
-        [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
-        clerkUser.username ||
-        "CommuniChat user",
+      name: clerkUser.username?.trim() || "CommuniChat user",
       image: clerkUser.imageUrl,
       username: clerkUser.username ?? "",
     });
+    await syncChannelMemberProfiles(streamServer, userId);
 
     return NextResponse.json({
       apiKey,
       token: streamServer.createToken(userId),
       user: {
         id: userId,
-        name:
-          [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
-          clerkUser.username ||
-          "CommuniChat user",
+        name: clerkUser.username?.trim() || "CommuniChat user",
         image: clerkUser.imageUrl,
         username: clerkUser.username ?? "",
       },
@@ -145,10 +137,7 @@ export async function POST() {
       clerkUser.primaryEmailAddress?.emailAddress ??
       clerkUser.emailAddresses[0]?.emailAddress ??
       "";
-    const name =
-      [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
-      clerkUser.username ||
-      "CommuniChat user";
+    const name = clerkUser.username?.trim() || "CommuniChat user";
 
     await syncClerkUser({
       id: clerkUser.id,

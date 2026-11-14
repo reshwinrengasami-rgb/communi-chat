@@ -102,9 +102,12 @@ type CameraFilter =
   | "pop"
   | "vintage"
   | "warm"
-  | "cool";
+  | "cool"
+  | "noir"
+  | "soft"
+  | "vibrant";
 type FaceEmoji = "none" | "goofy" | "crying" | "scared";
-type CameraBackground = "none" | "blur" | "mint" | "sunset" | "ocean";
+type CameraBackground = "none" | "blur" | "mint" | "sunset" | "ocean" | "lavender" | "night";
 type CameraEffects = {
   filter: CameraFilter;
   faceEmoji: FaceEmoji;
@@ -143,6 +146,9 @@ const cameraFilterCss: Record<Exclude<CameraFilter, "none">, string> = {
   vintage: "sepia(0.65) contrast(1.1)",
   warm: "sepia(0.2) saturate(1.25)",
   cool: "hue-rotate(15deg) saturate(1.1)",
+  noir: "grayscale(1) contrast(1.4)",
+  soft: "contrast(0.9) brightness(1.1) saturate(0.85)",
+  vibrant: "saturate(1.6) brightness(1.05)",
 };
 
 const faceEmojiText: Record<Exclude<FaceEmoji, "none">, string> = {
@@ -318,6 +324,8 @@ function createCameraEffectFilter(
               mint: ["#a7f3d0", "#0f766e"],
               sunset: ["#fdba74", "#be185d"],
               ocean: ["#7dd3fc", "#1d4ed8"],
+              lavender: ["#e9d5ff", "#7e22ce"],
+              night: ["#334155", "#0f172a"],
             };
             const colors = backgrounds[effects.background];
             const gradient = context.createLinearGradient(
@@ -956,6 +964,7 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
         <WithComponents
           overrides={{
             EmojiPicker: () => <ChatEmojiPicker theme={theme} />,
+            PollCreationDialog: SingleVotePollDialog,
           }}
         >
           <div
@@ -1038,6 +1047,77 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
         </WithComponents>
       </Chat>
     </StreamVideo>
+  );
+}
+
+function SingleVotePollDialog({ close }: { close: () => void }) {
+  const { channel, client } = useChatContext();
+  const [question, setQuestion] = useState("");
+  const [options, setOptions] = useState(["", "", "", ""]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = question.trim();
+    const choices = options.map((option) => option.trim()).filter(Boolean);
+    if (!name || choices.length < 2) {
+      setError("Enter a question and at least two options.");
+      return;
+    }
+    if (new Set(choices.map((choice) => choice.toLowerCase())).size !== choices.length) {
+      setError("Each option must be different.");
+      return;
+    }
+    if (!channel) {
+      setError("Choose a conversation first.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const { poll } = await client.createPoll({
+        name,
+        options: choices.map((text) => ({ text })),
+        enforce_unique_vote: true,
+        max_votes_allowed: 1,
+        allow_user_suggested_options: false,
+      });
+      await channel.sendMessage({ poll_id: poll.id });
+      close();
+    } catch (cause) {
+      console.error("Unable to create poll", cause);
+      setError("Could not send the poll. Check your connection and poll permissions, then try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-3 rounded-xl bg-white p-5 text-slate-900">
+      <h2 className="text-lg font-semibold">Create a poll</h2>
+      <p className="text-sm">Each person can vote for one option.</p>
+      <label className="text-sm">
+        Question
+        <input className="mt-1 w-full rounded border p-2" value={question} maxLength={200}
+          onChange={(event) => setQuestion(event.target.value)} disabled={busy} />
+      </label>
+      {options.map((option, index) => (
+        <label key={index} className="text-sm">
+          Option {index + 1}{index > 1 ? " (optional)" : ""}
+          <input className="mt-1 w-full rounded border p-2" value={option} maxLength={100}
+            onChange={(event) => setOptions((current) => current.map((item, i) => i === index ? event.target.value : item))}
+            disabled={busy} />
+        </label>
+      ))}
+      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+      <div className="flex justify-end gap-3">
+        <button type="button" onClick={close} disabled={busy}>Cancel</button>
+        <button type="submit" disabled={busy} className="rounded bg-emerald-700 px-4 py-2 text-white">
+          {busy ? "Sending..." : "Send poll"}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -1460,7 +1540,7 @@ function NewConversation({
             setError("");
             setQuery(event.target.value);
           }}
-          placeholder="Search by name or username…"
+          placeholder="Search by username…"
           className="mt-5 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-slate-600 focus:border-emerald-500/50"
         />
         <div className="mt-3 max-h-64 overflow-y-auto">
@@ -2210,7 +2290,7 @@ function GroupMemberManager({
               setError("");
               setQuery(event.target.value);
             }}
-            placeholder="Search by name or username"
+            placeholder="Search by username"
             aria-label="Search people to add"
             className="mt-2 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-slate-600 focus:border-emerald-500/50"
           />
@@ -2849,6 +2929,9 @@ function CallControls({
             { value: "vintage", label: "Vintage", preview: "V" },
             { value: "warm", label: "Warm", preview: "W" },
             { value: "cool", label: "Cool", preview: "C" },
+            { value: "noir", label: "Noir", preview: "N" },
+            { value: "soft", label: "Soft", preview: "S" },
+            { value: "vibrant", label: "Vibrant", preview: "V" },
           ]}
           menuSurface={menuSurface}
         />
@@ -2892,6 +2975,8 @@ function CallControls({
             { value: "mint", label: "Mint studio", preview: "M" },
             { value: "sunset", label: "Sunset studio", preview: "S" },
             { value: "ocean", label: "Ocean studio", preview: "O" },
+            { value: "lavender", label: "Lavender studio", preview: "L" },
+            { value: "night", label: "Night studio", preview: "N" },
           ]}
           menuSurface={menuSurface}
         />

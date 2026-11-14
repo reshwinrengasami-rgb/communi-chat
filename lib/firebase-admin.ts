@@ -18,7 +18,7 @@ function messaging() {
   return getMessaging(app);
 }
 
-export async function sendFirebasePush(userIds: string[], payload: Record<string, string>, token?: string) {
+export async function sendFirebasePush(userIds: string[], payload: Record<string, string>, token?: string, ttl = 60) {
   await connectToDatabase();
   const subscriptions = await FirebasePushToken.find({
     userId: { $in: userIds },
@@ -33,7 +33,7 @@ export async function sendFirebasePush(userIds: string[], payload: Record<string
     const result = await client.sendEachForMulticast({
       tokens: batch.map((item) => item.token),
       data: payload,
-      webpush: { headers: { Urgency: "high", TTL: "60" } },
+      webpush: { headers: { Urgency: "high", TTL: String(ttl) } },
     });
     sent += result.successCount;
     for (let index = 0; index < result.responses.length; index++) {

@@ -39,21 +39,13 @@ export async function syncClerkUser(profile: ClerkProfile) {
     throw new Error(`Clerk user ${profile.id} does not have an email address`);
   }
 
-  const fullName = [
-    profile.firstName ?? profile.first_name,
-    profile.lastName ?? profile.last_name,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-
   await connectToDatabase();
   const user = await User.findOneAndUpdate(
     { clerkId: profile.id },
     {
       $set: {
         email: primaryEmail,
-        name: fullName || profile.username || primaryEmail,
+        name: profile.username?.trim() || "CommuniChat user",
         imageUrl: profile.imageUrl ?? profile.image_url ?? "",
         username: profile.username ?? "",
       },

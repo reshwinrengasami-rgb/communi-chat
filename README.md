@@ -31,26 +31,26 @@ Communichat is a dark-first real-time messaging dashboard built with the Next.js
 | `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | Firebase Cloud Messaging web push public key |
 | `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` | Firebase service account credentials, server-side only |
 
-The authenticated `/api/stream/token` route provisions the signed-in user in Stream and upserts their MongoDB profile/settings. When someone opens Communichat, the authenticated profile-sync request also refreshes the latest Clerk names and photos for members of their recent chats in Stream. This avoids requiring a Clerk webhook; profile changes sync the next time a chat member opens Communichat.
+The authenticated `/api/stream/token` route provisions the signed-in user in Stream and upserts their MongoDB profile/settings. When someone opens Communichat, the authenticated profile-sync request also refreshes the latest Clerk usernames and photos for members of their recent chats in Stream. This avoids requiring a Clerk webhook; profile changes sync the next time a chat member opens Communichat.
 
 ## Included features
 
 - Clerk sign-in/sign-up and protected workspace routes
 - User and settings Mongoose models, with idempotent profile synchronization
 - Server-issued Stream user tokens; the Stream secret is never sent to the browser
-- Real-time Stream messaging with channel lists, direct messages, group channels, media uploads, typing indicators, read receipts, and threaded replies
+- Real-time Stream messaging with channel lists, direct messages, group channels, media uploads, typing indicators, read receipts, threaded replies, and single-vote polls
 - GIF search and sending through Stream's built-in `/giphy` command, with no separate Giphy API key
 - Stream Video calling overlay with microphone, camera, screen-share, and leave controls
 - Ringing call invitations that recipients can accept or decline, with incoming video requested at up to 720p when network conditions allow
 - A public landing page and responsive call prompts, including a full-screen incoming-call prompt on mobile
-- Browser push notifications for incoming calls and an optional in-page ringtone
+- Browser push notifications for messages and incoming calls and an optional in-page ringtone
 - Recipients who open Communichat while a call is still active can find and join that call
 - Responsive dashboard layout and dark theme
 
-Create a direct message or group channel from the **+** button in the conversation rail. Use the **GIF** button next to the composer to search and send a GIF (leave the search empty for a random GIF); Stream's Giphy command must be enabled for the channel type in the Stream dashboard. Call buttons invite members of the selected conversation; recipients can join or decline from the incoming call prompt. Each invite creates a new Stream call and sends the ring event with the call request. Video resolution is adaptive, so network conditions and camera hardware may result in a lower resolution. Stream's channel permissions and upload settings are managed in the Stream dashboard. For a production deployment, configure Clerk's allowed origins and Stream's production permissions.
+Create a direct message or group channel from the **+** button in the conversation rail. Use the composer attachment menu to create a poll with two to four options; polls must be enabled for the channel type and members need poll permissions in the Stream dashboard. Use the **GIF** button next to the composer to search and send a GIF (leave the search empty for a random GIF); Stream's Giphy command must be enabled for the channel type in the Stream dashboard. Call buttons invite members of the selected conversation; recipients can join or decline from the incoming call prompt. Each invite creates a new Stream call and sends the ring event with the call request. Video resolution is adaptive, so network conditions and camera hardware may result in a lower resolution. Stream's channel permissions and upload settings are managed in the Stream dashboard. For a production deployment, configure Clerk's allowed origins and Stream's production permissions.
 
 The people picker searches registered profiles through an authenticated server
-endpoint after at least two characters of a name or username are entered. It
+endpoint after at least two characters of a username are entered. It
 does not return email addresses or list users for an empty search. Search is
 limited to 30 requests per signed-in account per minute, with counters stored
 in MongoDB; database failures cause the search to fail rather than bypass the
@@ -58,6 +58,19 @@ limit. This alone
 is not a complete directory privacy boundary: users with Stream user-query
 permission may still query Stream directly. Restrict that permission in the
 Stream dashboard and verify that existing chat and call flows still work.
+Profiles synced from Clerk use usernames, or "CommuniChat user" when none is
+set. Existing Stream profiles are refreshed when their owners or recent chat
+members open the app; older unsynced profiles and historical data may still
+contain names. Review and migrate existing Stream data before relying on this
+as a complete privacy guarantee.
+Restrict Stream channel and user-query permissions to the intended members,
+configure moderation and rate limits in the Stream dashboard, and enable
+multi-factor authentication for administrator accounts in Clerk. To hide words
+in the existing `profanity` blocklist, configure its rule in the Stream
+moderation policy for chat with the `mask` action and test it on the deployed
+channel type. This replaces matching text rather than applying a visual blur;
+the application does not configure or verify the Stream policy. Preserve other
+rules when editing the policy: an API upsert replaces the existing policy.
 In calls, mobile devices can switch cameras when the camera is enabled. To
 share a screen, use HTTPS and a browser that supports screen capture, choose
 **Share screen**, and select a screen, window, or tab in the browser's prompt.
@@ -94,6 +107,9 @@ already enabled using Web Push, turn it off and on to switch to FCM. Browsers
 unsupported by Firebase continue to use Web Push; keep its VAPID settings for
 those browsers and existing subscriptions. FCM background delivery depends on
 the browser and operating system; a force-stopped browser may not receive pushes.
+Message pushes request a seven-day delivery window; the push service may expire
+them sooner. Calls retain a one-minute window. A powered-off device cannot
+display or play notifications until it is powered on and reconnects.
 Stream does not support web push through its native push providers, so browser
 FCM is delivered by the signed Stream webhook and Firebase Admin integration,
 not by a GetStream `firebase-web` provider. See

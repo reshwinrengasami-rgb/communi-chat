@@ -36,18 +36,13 @@ export async function GET(request: Request) {
     const pattern = peopleSearchPattern(search);
     const users = await User.find({
       clerkId: { $ne: userId },
-      $or: [
-        { username: pattern },
-        { name: pattern, $expr: { $ne: [{ $toLower: "$name" }, { $toLower: "$email" }] } },
-      ],
-    }).select("clerkId name username imageUrl email").sort({ name: 1 }).limit(20)
-      .lean<Array<{ clerkId: string; name: string; username?: string; imageUrl?: string; email: string }>>();
+      username: pattern,
+    }).select("clerkId username imageUrl").sort({ username: 1 }).limit(20)
+      .lean<Array<{ clerkId: string; username?: string; imageUrl?: string }>>();
     return NextResponse.json({
       users: users.map((user) => ({
         id: user.clerkId,
-        name: user.name.toLowerCase() === user.email.toLowerCase()
-          ? user.username || "CommuniChat user"
-          : user.name,
+        name: user.username?.trim() || "CommuniChat user",
         image: user.imageUrl || undefined,
       })),
     });
