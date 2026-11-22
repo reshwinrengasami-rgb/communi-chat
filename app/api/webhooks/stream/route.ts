@@ -112,6 +112,7 @@ async function sendPushToUsers(
       try {
         await sendNotification(pushSubscription, payload, {
           TTL: ttl,
+          urgency: "high",
         });
         return "sent" as const;
       } catch (error) {

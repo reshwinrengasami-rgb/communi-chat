@@ -30,6 +30,7 @@ function showCommuniChatNotification(payload) {
           : "communichat-message",
       data: { callCid, channelCid },
       requireInteraction: isCall,
+      actions: isCall ? [{ action: "accept", title: "Join call" }] : [],
       silent: false,
       vibrate: isCall ? [300, 120, 300, 120, 500] : [180, 80, 180],
     });
@@ -61,6 +62,7 @@ self.addEventListener("notificationclick", (event) => {
           const targetUrl = new URL("/", self.location.origin);
           if (event.notification.data?.callCid) {
             targetUrl.searchParams.set("call", event.notification.data.callCid);
+            if (event.action === "accept") targetUrl.searchParams.set("acceptCall", "1");
           } else if (event.notification.data?.channelCid) {
             targetUrl.searchParams.set(
               "channel",
@@ -76,6 +78,7 @@ self.addEventListener("notificationclick", (event) => {
         const targetUrl = new URL("/", self.location.origin);
         if (event.notification.data?.callCid) {
           targetUrl.searchParams.set("call", event.notification.data.callCid);
+          if (event.action === "accept") targetUrl.searchParams.set("acceptCall", "1");
         } else if (event.notification.data?.channelCid) {
           targetUrl.searchParams.set(
             "channel",

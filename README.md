@@ -41,13 +41,13 @@ The authenticated `/api/stream/token` route provisions the signed-in user in Str
 - Real-time Stream messaging with channel lists, direct messages, group channels, media uploads, typing indicators, read receipts, threaded replies, and single-vote polls
 - GIF search and sending through Stream's built-in `/giphy` command, with no separate Giphy API key
 - Stream Video calling overlay with microphone, camera, screen-share, and leave controls
-- Ringing call invitations that recipients can accept or decline, with incoming video requested at up to 720p when network conditions allow
+- Ringing call invitations that recipients can accept or decline, with adaptive incoming video
 - A public landing page and responsive call prompts, including a full-screen incoming-call prompt on mobile
 - Browser push notifications for messages and incoming calls and an optional in-page ringtone
 - Recipients who open Communichat while a call is still active can find and join that call
 - Responsive dashboard layout and dark theme
 
-Create a direct message or group channel from the **+** button in the conversation rail. Use the composer attachment menu to create a poll with two to four options; polls must be enabled for the channel type and members need poll permissions in the Stream dashboard. Use the **GIF** button next to the composer to search and send a GIF (leave the search empty for a random GIF); Stream's Giphy command must be enabled for the channel type in the Stream dashboard. Call buttons invite members of the selected conversation; recipients can join or decline from the incoming call prompt. Each invite creates a new Stream call and sends the ring event with the call request. Video resolution is adaptive, so network conditions and camera hardware may result in a lower resolution. Stream's channel permissions and upload settings are managed in the Stream dashboard. For a production deployment, configure Clerk's allowed origins and Stream's production permissions.
+Create a direct message or group channel from the **+** button in the conversation rail. Use the poll button beside the composer to create a poll with two to four options; polls must be enabled for the channel type and members need the `send-poll` permission in the Stream dashboard. The poll button explains when these settings are missing; reopen the conversation after changing them. Use the **GIF** button next to the composer to search and send a GIF (leave the search empty for a random GIF); Stream's Giphy command must be enabled for the channel type in the Stream dashboard. Call buttons invite members of the selected conversation; recipients can join or decline from the incoming call prompt. Each invite creates a new Stream call and sends the ring event with the call request. Video resolution is adaptive, so network conditions and camera hardware may result in a lower resolution. Stream's channel permissions and upload settings are managed in the Stream dashboard. For a production deployment, configure Clerk's allowed origins and Stream's production permissions.
 
 The people picker searches registered profiles through an authenticated server
 endpoint after at least two characters of a username are entered. It
@@ -88,11 +88,10 @@ MongoDB; existing synced settings replace this device's settings when sync is
 enabled. Disabling sync stops this device updating the account copy; it does not
 delete the account copy or turn off sync on other devices.
 
-On Android, accepting an incoming call from its notification opens CommuniChat
-and joins the call automatically. Opening the notification without accepting
-still shows the incoming-call prompt. The website must be deployed with this
-change before the Android notification's Accept action can join automatically.
-Android may still ask for microphone or camera permission.
+Audio calls start with the camera off; participants can turn it on explicitly.
+Calls request microphone access on joining. If access or audio playback is
+blocked, follow the message in the call and check browser or device permissions.
+Network conditions can still affect call quality.
 
 ### Browser push setup
 
@@ -115,17 +114,11 @@ FCM is delivered by the signed Stream webhook and Firebase Admin integration,
 not by a GetStream `firebase-web` provider. See
 [Stream's push notification documentation](https://getstream.io/docs/platform/push-notifications/).
 
-Android uses its own Stream Firebase push provider rather than browser FCM.
-Configure `firebase-android` with the Firebase service account in the Stream
-dashboard, enable message push for the channel type, configure high-priority
-message delivery on the sending side, and permit app notifications on the
-phone. Deploy the website as well as installing the APK: the website closes
-the Android WebView's chat connection when the app is backgrounded and
-restores it on return, allowing Stream to consider it offline for push.
-Stream push eligibility, other active sessions, and device battery restrictions
-also affect delivery. Sending a test from one signed-in device to another and
-checking Android logs and the Stream dashboard are necessary to confirm actual
-delivery.
+The separate Android mobile app uses a Stream Firebase push provider. Configure
+`firebase-android` in the Stream dashboard, enable message push for the channel
+type, and allow notifications on the phone. The mobile app must register its
+device while signed in. Delivery also depends on Firebase, Stream settings, and
+Android battery restrictions; test on a real device with the app backgrounded.
 
 1. Generate a VAPID key pair once with `npx web-push generate-vapid-keys`. Keep the private key secret and do not regenerate it after users subscribe.
 2. Set `NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`, and `WEB_PUSH_VAPID_SUBJECT` in `.env.local` and in your hosting provider's environment settings. The subject can be your public HTTPS site URL; the private key must not use a `NEXT_PUBLIC_` prefix.

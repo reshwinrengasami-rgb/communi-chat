@@ -53,6 +53,21 @@ async function saveFirebaseToken(token: string, method: "POST" | "DELETE") {
   if (!response.ok) throw new Error(await responseError(response, "Could not update Firebase notifications."));
 }
 
+async function saveWebPushSubscription(subscription: PushSubscription) {
+  const subscriptionData = subscription.toJSON();
+  if (!subscriptionData.keys?.p256dh || !subscriptionData.keys.auth) {
+    throw new Error("This browser returned an incomplete push subscription.");
+  }
+  const response = await fetch("/api/push-subscriptions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint: subscription.endpoint, keys: subscriptionData.keys }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Could not save this browser subscription."));
+  }
+}
+
 async function registerFirebasePush() {
   if (!firebaseVapidKey || Object.values(firebaseConfig).some((value) => !value)) {
     throw new Error("Firebase browser notifications are not configured.");
@@ -560,11 +575,14 @@ export function CallNotificationsToggle() {
         if (active && !subscription) {
           window.localStorage.removeItem(callNotificationsStorageKey);
           notifyCallNotificationPreferenceChanged();
+          setError("This device's notification subscription expired. Turn notifications on again.");
+        } else if (subscription) {
+          await saveWebPushSubscription(subscription);
         }
       } catch (cause) {
         console.error("Unable to check browser push subscription", cause);
         if (active) {
-          setError("Could not check this browser’s notification subscription.");
+          setError("Could not restore this browser’s notification subscription. Check your connection and try again.");
         }
       }
     }
@@ -720,29 +738,20 @@ export function CallNotificationsToggle() {
           userVisibleOnly: true,
           applicationServerKey: decodeVapidPublicKey(publicKeyResult.publicKey),
         }));
-      const subscriptionData = subscription.toJSON();
-      if (!subscriptionData.keys?.p256dh || !subscriptionData.keys.auth) {
-        throw new Error("This browser returned an incomplete push subscription.");
-      }
-      const saveResponse = await fetch("/api/push-subscriptions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          endpoint: subscription.endpoint,
-          keys: subscriptionData.keys,
-        }),
-      });
-      if (!saveResponse.ok) {
-        await subscription.unsubscribe();
-        throw new Error(
-          await responseError(saveResponse, "Could not save this browser subscription."),
-        );
+      try {
+        await saveWebPushSubscription(subscription);
+      } catch (error) {
+        if (!existingSubscription) {
+          const unsubscribed = await subscription.unsubscribe();
+          if (!unsubscribed) console.error("Could not remove the unsaved push subscription");
+        }
+        throw error;
       }
 
       await readyRegistration.showNotification(
         "CommuniChat notifications are on",
         {
-          body: "You’ll see a notification when someone calls while CommuniChat is in the background.",
+          body: "You’ll see chat and call notifications when CommuniChat is in the background.",
           tag: "communichat-notifications-enabled",
         },
       );

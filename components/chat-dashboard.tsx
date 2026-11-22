@@ -12,8 +12,10 @@ import {
 import {
   ArrowLeft,
   Activity,
+  BarChart3,
   Camera,
   ChevronDown,
+  Film,
   Hash,
   Headphones,
   MessageCircle,
@@ -43,12 +45,14 @@ import {
 } from "@/components/call-sound-toggle";
 import { joinIncomingCall } from "@/lib/join-incoming-call";
 import { peopleSearchTerm } from "@/lib/people-search";
+import { pollUnavailableReason } from "@/lib/poll-availability";
 import { AppearanceProvider, AppearanceSettings } from "@/components/appearance-settings";
 import {
   Channel,
   ChannelList as StreamChannelList,
   Chat,
   ChannelListItemUI,
+  GlobalModal,
   MessageComposer,
   MessageList,
   Thread,
@@ -56,6 +60,7 @@ import {
   Window,
   type ChannelListItemUIProps,
   useChatContext,
+  useChannelStateContext,
 } from "stream-chat-react";
 import { EmojiPicker } from "stream-chat-react/emojis";
 import { StreamChat, type Channel as StreamChannel } from "stream-chat";
@@ -981,8 +986,8 @@ export function ChatDashboard({ user }: { user: DashboardUser }) {
                 }
               />
               <ChatWindow
-                onStartCall={(call) => {
-                  setCallNotice("");
+                onStartCall={(call, warning) => {
+                  setCallNotice(warning ?? "");
                   setActiveCall(call);
                 }}
                 videoClient={videoClient}
@@ -1118,6 +1123,118 @@ function SingleVotePollDialog({ close }: { close: () => void }) {
         </button>
       </div>
     </form>
+  );
+}
+
+function PollButton() {
+  const { channel, channelCapabilities, channelConfig } = useChannelStateContext();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
+
+  function openPoll() {
+    const reason = pollUnavailableReason(channelConfig?.polls, channelCapabilities["send-poll"]);
+    setError(reason);
+    if (!reason) setOpen(true);
+  }
+
+  return (
+    <>
+      <button type="button" onClick={openPoll} aria-label="Create poll" title="Create poll"
+        className="mb-1 rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-emerald-400">
+        <BarChart3 size={20} />
+      </button>
+      {error && (
+        <div role="alert" className="absolute bottom-20 right-4 z-20 max-w-sm rounded-lg bg-slate-800 p-4 text-sm text-white shadow-lg">
+          {error} Reopen the conversation after changing Stream settings.
+          <button type="button" onClick={() => setError("")} className="ml-2 underline">Dismiss</button>
+        </div>
+      )}
+      <GlobalModal open={open} onClose={() => setOpen(false)} aria-label="Create poll">
+        {open && <SingleVotePollDialog key={channel.cid} close={() => setOpen(false)} />}
+      </GlobalModal>
+    </>
+  );
+}
+
+function GifButton() {
+  const { channel, channelConfig } = useChannelStateContext();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function sendGif(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const command = channelConfig?.commands?.find(({ name }) => name === "giphy");
+    if (!command) {
+      setError("GIFs are not enabled for this conversation's channel type in Stream.");
+      return;
+    }
+    if (channel.messageComposer.isCommandDisabled(command)) {
+      setError(
+        channel.messageComposer.getCommandDisabledReason(command) ??
+          "Your role does not have permission to send GIFs in this conversation.",
+      );
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    try {
+      const searchTerm = query.trim();
+      await channel.sendMessage({ text: searchTerm ? `/giphy ${searchTerm}` : "/giphy" });
+      setOpen(false);
+      setQuery("");
+    } catch (cause) {
+      console.error("Unable to send GIF", cause);
+      setError("Could not send the GIF. Check your connection and GIF permissions, then try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setError("");
+          setOpen(true);
+        }}
+        aria-label="Search GIFs"
+        title="Search GIFs"
+        className="mb-1 flex items-center gap-1 rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-emerald-400"
+      >
+        <Film size={20} />
+        <span className="text-xs font-semibold">GIF</span>
+      </button>
+      <GlobalModal open={open} onClose={() => setOpen(false)} aria-label="Search GIFs">
+        {open && (
+          <form onSubmit={sendGif} className="flex flex-col gap-3 rounded-xl bg-white p-5 text-slate-900">
+            <h2 className="text-lg font-semibold">Search GIFs</h2>
+            <p className="text-sm">Enter a search term, or leave it empty for a random GIF.</p>
+            <label className="text-sm">
+              Search
+              <input
+                autoFocus
+                className="mt-1 w-full rounded border p-2"
+                value={query}
+                maxLength={120}
+                onChange={(event) => setQuery(event.target.value)}
+                disabled={busy}
+              />
+            </label>
+            {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+            <div className="flex justify-end gap-3">
+              <button type="button" onClick={() => setOpen(false)} disabled={busy}>Cancel</button>
+              <button type="submit" disabled={busy} className="rounded bg-emerald-700 px-4 py-2 text-white">
+                {busy ? "Sending..." : "Send GIF"}
+              </button>
+            </div>
+          </form>
+        )}
+      </GlobalModal>
+    </>
   );
 }
 
@@ -1627,7 +1744,7 @@ function ChatWindow({
   theme,
   onToggleTheme,
 }: {
-  onStartCall: (call: Call) => void;
+  onStartCall: (call: Call, warning?: string) => void;
   videoClient: StreamVideoClient;
   theme: ColorTheme;
   onToggleTheme: () => void;
@@ -1656,6 +1773,8 @@ function ChatWindow({
               <div className="min-w-0 flex-1">
                 <MessageComposer focus />
               </div>
+              <PollButton key={channel?.cid} />
+              <GifButton key={channel?.cid} />
             </div>
           </AppearanceProvider>
         </Window>
@@ -1671,7 +1790,7 @@ function WorkspaceHeader({
   theme,
   onToggleTheme,
 }: {
-  onStartCall: (call: Call) => void;
+  onStartCall: (call: Call, warning?: string) => void;
   videoClient: StreamVideoClient;
   theme: ColorTheme;
   onToggleTheme: () => void;
@@ -1832,18 +1951,20 @@ function WorkspaceHeader({
         crypto.randomUUID(),
       );
       activeCall = call;
+      if (!videoEnabled) await call.camera.disable();
       await call.getOrCreate({
         ring: true,
         video: videoEnabled,
         data: {
+          custom: { audioOnly: !videoEnabled },
+          ...(!videoEnabled ? { settings_override: { video: { camera_default_on: false } } } : {}),
           members: Object.keys(channel.state.members).map((id) => ({
             user_id: id,
           })),
         },
       });
-      await call.join();
-      if (videoEnabled) await call.camera.enable();
-      onStartCall(call);
+      const warning = await joinIncomingCall(call);
+      onStartCall(call, warning);
     } catch (error) {
       console.error("Unable to start call", error);
       if (activeCall) await activeCall.leave().catch((leaveError: unknown) => {
@@ -2600,18 +2721,11 @@ function DeclinedCallBanner({
         pendingCall.call.type,
         pendingCall.call.id,
       );
-      await call.get();
-      await call.join();
-      let cameraWarning = "";
-      if (call.type !== "audio_call") {
-        try {
-          await call.camera.enable();
-        } catch (cause) {
-          console.error("Unable to enable camera when rejoining call", cause);
-          cameraWarning =
-            "You joined without video. Allow camera access, then turn on your camera.";
-        }
+      if (pendingCall.call.type === "audio_call" || pendingCall.call.state.custom.audioOnly === true) {
+        await call.camera.disable();
       }
+      await call.get();
+      const cameraWarning = await joinIncomingCall(call);
       onJoin(call, cameraWarning);
     } catch (cause) {
       console.error("Unable to rejoin declined call", cause);
@@ -2740,15 +2854,12 @@ function CallContent({
   const {
     useCallCallingState,
     useParticipantCount,
-    useCameraState,
+    useAutoplayBlockedSessionIds,
   } = useCallStateHooks();
   const callingState = useCallCallingState();
   const participantCount = useParticipantCount();
-  const camera = useCameraState();
-
-  useEffect(() => {
-    call.setPreferredIncomingVideoResolution({ width: 1280, height: 720 });
-  }, [call]);
+  const blockedAudio = useAutoplayBlockedSessionIds();
+  const [audioError, setAudioError] = useState("");
 
   useEffect(() => {
     if (callingState === "left") onClose();
@@ -2797,7 +2908,7 @@ function CallContent({
           <X size={17} />
         </button>
       </header>
-      {cameraWarning && !camera.isEnabled && (
+      {cameraWarning && (
         <p
           role="status"
           className="border-b border-amber-300/10 bg-amber-300/[0.06] px-6 py-2 text-xs text-amber-100/80"
@@ -2805,6 +2916,19 @@ function CallContent({
           {cameraWarning}
         </p>
       )}
+      {blockedAudio.length > 0 && (
+        <button type="button" className="bg-amber-900 px-4 py-2 text-sm text-white"
+          onClick={() => {
+            setAudioError("");
+            void call.resumeAudio().catch((error: unknown) => {
+              console.error("Unable to resume call audio", error);
+              setAudioError("Could not start call audio. Check your browser and device sound settings.");
+            });
+          }}>
+          Tap to enable call audio
+        </button>
+      )}
+      {audioError && <p role="alert" className="bg-rose-900 px-4 py-2 text-sm text-white">{audioError}</p>}
       <div className="relative min-h-0 flex-1 p-2 sm:p-4">
         <CallStage call={call} />
       </div>
@@ -2872,6 +2996,7 @@ function CallControls({
   const [screenShareBusy, setScreenShareBusy] = useState(false);
   const [shareAudio, setShareAudio] = useState(false);
   const [cameraError, setCameraError] = useState("");
+  const [microphoneError, setMicrophoneError] = useState("");
   const isMobile = useSyncExternalStore(subscribeToMobileDevice, isMobileDevice, () => false);
   useEffect(() => {
     if (
@@ -2984,14 +3109,26 @@ function CallControls({
       <div className="flex items-center gap-3">
         <ControlButton
           label={microphone.isMute ? "Unmute microphone" : "Mute microphone"}
-          onClick={() => void microphone.microphone.toggle()}
+          onClick={() => {
+            setMicrophoneError("");
+            void microphone.microphone.toggle().catch((error: unknown) => {
+              console.error("Unable to change microphone", error);
+              setMicrophoneError("Could not change microphone. Check microphone permissions and try again.");
+            });
+          }}
           active={!microphone.isMute}
         >
           <Headphones size={18} />
         </ControlButton>
         <ControlButton
           label={camera.isEnabled ? "Turn camera off" : "Turn camera on"}
-          onClick={() => void camera.camera.toggle()}
+          onClick={() => {
+            setCameraError("");
+            void camera.camera.toggle().catch((error: unknown) => {
+              console.error("Unable to change camera", error);
+              setCameraError("Could not change camera. Check camera permissions and try again.");
+            });
+          }}
           active={camera.isEnabled}
         >
           <Video size={18} />
@@ -3064,9 +3201,9 @@ function CallControls({
         />
         Share screen audio when supported
       </label>
-      {(effectError || screenShareError || cameraError) && (
+      {(effectError || screenShareError || cameraError || microphoneError) && (
         <p role="alert" className="max-w-sm text-center text-xs text-rose-300">
-          {effectError || screenShareError || cameraError}
+          {effectError || screenShareError || cameraError || microphoneError}
         </p>
       )}
       <p className="max-w-md text-center text-[10px] leading-4 text-slate-500">
